@@ -989,15 +989,59 @@ async function parseDocxXmlNative(arrayBuffer){
       }
     }
 
-    // Remove existing Steam banner images only when they are image-only blocks
-    // at the absolute start/end of the DOCX body. Article/content images remain.
+    // DOCX의 상/하단 배너는 Steam에 이미 존재하므로 본문에 절대 넣지 않는다.
+    // 상단 배너 앞에는 제목 구분선/빈 줄이 끼어 있을 수 있으므로,
+    // "첫 실제 본문 텍스트/표"가 나오기 전의 이미지 전용 블록을 상단 배너로 본다.
+    // 하단은 실제 본문이 끝난 뒤 남는 마지막 이미지 전용 블록을 제거한다.
     const temp=document.createElement("div");
     temp.innerHTML=bodyParts.join("");
-    const kids=[...temp.children];
-    const isImageOnly=el=>el.tagName==="P" && !!el.querySelector("img") && !(el.textContent||"").trim();
-    if(kids.length && isImageOnly(kids[0])) kids[0].remove();
-    const kids2=[...temp.children];
-    if(kids2.length && isImageOnly(kids2[kids2.length-1])) kids2[kids2.length-1].remove();
+
+    const isImageOnly=el =>
+      el?.tagName==="P" &&
+      !!el.querySelector("img") &&
+      !(el.textContent||"").trim();
+
+    const isRealBodyContent=el => {
+      if(!el) return false;
+      if(el.matches("table")) return true;
+      if(isImageOnly(el)) return false;
+      const text=(el.textContent||"").replace(/\u00a0/g," ").trim();
+      return !!text;
+    };
+
+    // Top banner: remove the source banner and anything before it
+    // (typically the title underline / blank paragraphs).
+    let topBanner=null;
+    for(const el of [...temp.children]){
+      if(isRealBodyContent(el)) break;
+      if(isImageOnly(el)){ topBanner=el; break; }
+    }
+    if(topBanner){
+      let n=temp.firstElementChild;
+      while(n){
+        const next=n.nextElementSibling;
+        n.remove();
+        if(n===topBanner) break;
+        n=next;
+      }
+    }
+
+    // Bottom banner: after the last real body content, remove a trailing image-only banner.
+    const childrenAfterTop=[...temp.children];
+    let lastReal=-1;
+    childrenAfterTop.forEach((el,i)=>{ if(isRealBodyContent(el)) lastReal=i; });
+    if(lastReal>=0){
+      const trailing=childrenAfterTop.slice(lastReal+1);
+      const bottomBanner=[...trailing].reverse().find(isImageOnly);
+      if(bottomBanner){
+        let n=bottomBanner;
+        while(n){
+          const next=n.nextElementSibling;
+          n.remove();
+          n=next;
+        }
+      }
+    }
 
     // Strip only leading/trailing blank paragraphs; preserve all internal spacing exactly.
     while(temp.firstElementChild && temp.firstElementChild.classList.contains("docx-empty-line")) temp.firstElementChild.remove();
