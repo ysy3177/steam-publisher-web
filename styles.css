@@ -191,3 +191,28 @@ button:disabled{opacity:.45;cursor:not-allowed}
   background:#1a9fff;color:#fff;font-weight:700;font-size:14px
 }
 .extension-download-btn:hover{filter:brightness(1.08)}
+
+/* v0.7.2 chrome://extensions copy UI */
+.chrome-url-copy-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:7px 0 3px;
+  flex-wrap:wrap;
+}
+.chrome-url-copy-row code{
+  display:inline-block;
+  padding:7px 9px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#0e151d;
+}
+.copy-url-btn{
+  padding:7px 10px;
+  border-radius:6px;
+  font-size:13px;
+  font-weight:700;
+}
+
+/* v0.7.3: verbose connection details are internal only */
+.connection-detail-hidden{display:none!important}

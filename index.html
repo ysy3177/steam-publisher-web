@@ -15,7 +15,7 @@
         <h1>Steam Publisher Web</h1>
         <p>DOCX 다국어 공지를 Steam 편집기에 적용합니다.</p>
       </div>
-      <span class="version">v0.7.1 · EXTENSION DOWNLOAD</span>
+      <span class="version">v0.7.3 · COMPACT CONNECTION</span>
     </section>
 
     <section class="panel">
@@ -60,7 +60,13 @@
         </div>
         <ol>
           <li>다운로드한 ZIP 파일의 압축을 풉니다.</li>
-          <li>Chrome 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
+          <li>
+            Chrome 확장 프로그램 관리 페이지 주소를 복사한 뒤 주소창에 붙여넣습니다.
+            <div class="chrome-url-copy-row">
+              <code id="chromeExtensionsUrl">chrome://extensions</code>
+              <button type="button" id="copyChromeExtensionsBtn" class="copy-url-btn">주소 복사</button>
+            </div>
+          </li>
           <li>오른쪽 위 <b>개발자 모드</b>를 켭니다.</li>
           <li><b>압축해제된 확장 프로그램을 로드</b>를 누릅니다.</li>
           <li>압축을 푼 폴더 안의 <b>extension</b> 폴더를 선택합니다.</li>
@@ -69,10 +75,10 @@
 
       <div class="connection-card diagnostic-card">
         <div class="diagnostic-list">
-          <div><span class="diag-dot" id="bridgeDot"></span><b>① 웹페이지 연결</b><span id="bridgeStatus">확인 전</span></div>
-          <div><span class="diag-dot" id="runtimeDot"></span><b>② 확장 프로그램 실행</b><span id="runtimeStatus">확인 전</span></div>
-          <div><span class="diag-dot" id="steamTabDot"></span><b>③ Steam 탭 발견</b><span id="steamTabStatus">확인 전</span></div>
-          <div><span class="diag-dot" id="editorDot"></span><b>④ 편집 화면 확인</b><span id="editorStatus">확인 전</span></div>
+          <div><span class="diag-dot" id="bridgeDot"></span><b>① 웹페이지 연결</b><span id="bridgeStatus" class="connection-detail-hidden">확인 전</span></div>
+          <div><span class="diag-dot" id="runtimeDot"></span><b>② 확장 프로그램 실행</b><span id="runtimeStatus" class="connection-detail-hidden">확인 전</span></div>
+          <div><span class="diag-dot" id="steamTabDot"></span><b>③ Steam 탭 발견</b><span id="steamTabStatus" class="connection-detail-hidden">확인 전</span></div>
+          <div><span class="diag-dot" id="editorDot"></span><b>④ 편집 화면 확인</b><span id="editorStatus" class="connection-detail-hidden">확인 전</span></div>
         </div>
         <button id="checkExtensionBtn">연결 상태 확인</button>
       </div>
@@ -96,6 +102,6 @@
     </section>
 
   </main>
-  <script src="app.js?v=071"></script>
+  <script src="app.js?v=073"></script>
 </body>
 </html>
