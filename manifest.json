@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Steam Publisher - 구버전 감지 테스트",
+  "version": "0.8.0",
+  "description": "Steam Publisher Web과 Steam 공지 편집 탭을 연결하는 브라우저 확장 프로그램입니다.",
+  "permissions": [
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.onrender.com/*",
+    "https://steamcommunity.com/*",
+    "https://partner.steamgames.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.onrender.com/*"
+      ],
+      "js": [
+        "site-bridge.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://steamcommunity.com/*",
+        "https://partner.steamgames.com/*"
+      ],
+      "js": [
+        "steam-content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Steam Publisher Web Bridge",
+    "default_popup": "popup.html"
+  }
+}
