@@ -131,3 +131,10 @@ Steam 공지를 복제한 뒤 기존 상단 배너와 하단 배너는 유지합
 - 일반 빈 `<p>`도 `<br>`를 넣어 실제 한 줄 공백으로 유지
 - 결과 JSON에 `insertedBlankParagraphs` 수 표시
 - 저장/게시 동작 없음
+
+## v0.5.5
+- 본문 마지막 문단과 하단 배너 사이에 최소 1줄 공백을 항상 보장
+- DOCX에 이미 마지막 빈 줄이 있으면 그대로 사용
+- 없으면 Steam ProseMirror용 `<p><br></p>` 1개를 자동 삽입
+- 결과 JSON에 `insertedFinalGapBeforeBottomBanner` 표시
+- 저장/게시 동작 없음
