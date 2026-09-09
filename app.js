@@ -309,7 +309,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.5.3) =====
+// ===== Steam Chrome extension bridge (v0.5.4) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){

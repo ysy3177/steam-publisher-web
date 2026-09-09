@@ -124,3 +124,10 @@ Steam 공지를 복제한 뒤 기존 상단 배너와 하단 배너는 유지합
 - DOCX가 없을 경우 버튼 클릭 시 안내하고 중단
 - app.js 캐시 버스터를 v053으로 갱신
 - 저장/게시 동작 없음
+
+## v0.5.4
+- Steam에 넣을 때 DOCX의 실제 빈 문단이 사라지던 문제 수정
+- 웹 미리보기용 `.docx-real-gap` / `.docx-empty-line`을 Steam ProseMirror용 `<p><br></p>`로 변환
+- 일반 빈 `<p>`도 `<br>`를 넣어 실제 한 줄 공백으로 유지
+- 결과 JSON에 `insertedBlankParagraphs` 수 표시
+- 저장/게시 동작 없음
