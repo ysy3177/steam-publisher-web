@@ -309,7 +309,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.5.0) =====
+// ===== Steam Chrome extension bridge (v0.5.1) =====
 let extensionConnected = false;
 
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
@@ -487,7 +487,7 @@ if(krTestBtn){
       type:"KR_UNSAVED_TEST_REQUEST",
       payload:{
         title: kr.title || "",
-        bodyHtml: kr.body || kr.html || ""
+        bodyHtml: kr.bodyHtml || ""
       }
     }, "*");
   });
