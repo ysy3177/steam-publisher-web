@@ -159,11 +159,120 @@ function extractTitleAndBody(html){
 
   return {title,bodyHtml:bodyBox.innerHTML.trim()};
 }
+
+function xmlText(el){
+  return [...el.getElementsByTagNameNS("*","t")].map(n=>n.textContent||"").join("");
+}
+
+async function extractBlankLineHints(arrayBuffer){
+  try{
+    const zip=await JSZip.loadAsync(arrayBuffer);
+    const xmlTextRaw=await zip.file("word/document.xml").async("string");
+    const xml=new DOMParser().parseFromString(xmlTextRaw,"application/xml");
+    const body=xml.getElementsByTagNameNS("*","body")[0];
+    if(!body) return {};
+
+    const hints={};
+    let current=null;
+    let pendingBlank=0;
+
+    const children=[...body.children];
+    for(const el of children){
+      const tag=(el.localName||"").toLowerCase();
+
+      if(tag==="p"){
+        const txt=normalizeText(xmlText(el));
+        const upper=txt.toUpperCase();
+
+        if(SECTION_CODES.includes(upper)){
+          current=upper;
+          pendingBlank=0;
+          if(!hints[current]) hints[current]=[];
+          continue;
+        }
+
+        if(!current) continue;
+
+        const hasDrawing=el.getElementsByTagNameNS("*","drawing").length>0 ||
+                         el.getElementsByTagNameNS("*","pict").length>0;
+
+        if(!txt && !hasDrawing){
+          pendingBlank++;
+          continue;
+        }
+
+        if(txt){
+          hints[current].push({text:txt, blankBefore:pendingBlank});
+        }
+        pendingBlank=0;
+      } else if(current && tag==="tbl"){
+        pendingBlank=0;
+      }
+    }
+    return hints;
+  }catch(err){
+    console.warn("빈 줄 힌트 추출 실패",err);
+    return {};
+  }
+}
+
+function insertRecoveredBlankLines(bodyHtml, langHints, titleText){
+  if(!langHints || !langHints.length) return bodyHtml;
+
+  const box=document.createElement("div");
+  box.innerHTML=bodyHtml;
+
+  const titleNorm=normalizeText(titleText);
+  const usefulHints=langHints.filter(h=>normalizeText(h.text)!==titleNorm);
+
+  // Mammoth 결과의 블록을 문서 순서대로 훑으면서 텍스트를 맞춘다.
+  const blocks=[...box.querySelectorAll("p,li,h1,h2,h3,h4,h5,h6,blockquote")];
+  let startAt=0;
+
+  for(const hint of usefulHints){
+    const target=normalizeText(hint.text);
+    if(!target || hint.blankBefore<=0) continue;
+
+    let matchIndex=-1;
+    for(let i=startAt;i<blocks.length;i++){
+      const bt=normalizeText(blocks[i].textContent);
+      if(!bt) continue;
+      if(bt===target || bt.includes(target) || target.includes(bt)){
+        matchIndex=i;
+        break;
+      }
+    }
+    if(matchIndex<0) continue;
+
+    const matched=blocks[matchIndex];
+
+    // 이미 바로 앞에 복구용 공백이 있으면 중복 삽입하지 않음.
+    let prev=matched.previousElementSibling;
+    let existing=0;
+    while(prev && prev.classList && prev.classList.contains("docx-real-gap")){
+      existing++;
+      prev=prev.previousElementSibling;
+    }
+
+    const toAdd=Math.max(0,Math.min(hint.blankBefore,3)-existing);
+    for(let n=0;n<toAdd;n++){
+      const gap=document.createElement("div");
+      gap.className="docx-real-gap";
+      gap.setAttribute("aria-hidden","true");
+      matched.parentNode.insertBefore(gap,matched);
+    }
+    startAt=matchIndex+1;
+  }
+
+  return box.innerHTML;
+}
+
 async function analyze(){
   if(!selectedFile)return;
   analyzeBtn.disabled=true; analyzeBtn.textContent="분석 중...";
   try{
     const arrayBuffer=await selectedFile.arrayBuffer();
+    const blankHints=await extractBlankLineHints(arrayBuffer.slice(0));
     const result=await mammoth.convertToHtml({arrayBuffer},{
       convertImage:mammoth.images.imgElement(async image=>{
         const buffer=await image.read("base64");
@@ -172,7 +281,13 @@ async function analyze(){
     });
     const temp=document.createElement("div"); temp.innerHTML=result.value;
     const sections=splitByLanguage(temp); parsed={};
-    for(const code of SECTION_CODES) if(sections[code]) parsed[code]=extractTitleAndBody(sections[code]);
+    for(const code of SECTION_CODES){
+      if(sections[code]){
+        const data=extractTitleAndBody(sections[code]);
+        data.bodyHtml=insertRecoveredBlankLines(data.bodyHtml, blankHints[code]||[], data.title);
+        parsed[code]=data;
+      }
+    }
     renderLangStatus(); renderTabs();
   }catch(err){console.error(err);alert("DOCX 분석 중 오류가 발생했습니다.\n"+err.message)}
   finally{analyzeBtn.disabled=false;analyzeBtn.textContent="문서 분석"}

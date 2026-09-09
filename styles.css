@@ -82,3 +82,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .preview p.docx-empty-line::before {
   content: "\00a0";
 }
+
+
+/* v0.2.2 - DOCX XML에서 복구한 실제 빈 문단 */
+.preview .docx-real-gap {
+  height: 1.15em;
+  min-height: 1.15em;
+}
