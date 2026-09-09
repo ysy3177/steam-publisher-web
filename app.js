@@ -1050,38 +1050,42 @@ function showDetail(mapping){
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
 
+
 const copyChromeExtensionsBtn = document.querySelector("#copyChromeExtensionsBtn");
-if(copyChromeExtensionsBtn){
-  copyChromeExtensionsBtn.addEventListener("click", async ()=>{
-    const url="chrome://extensions";
-    try{
-      await navigator.clipboard.writeText(url);
-      const old=copyChromeExtensionsBtn.textContent;
-      copyChromeExtensionsBtn.textContent="복사 완료";
-      setTimeout(()=>{ copyChromeExtensionsBtn.textContent=old; }, 1500);
-    }catch(err){
-      // Clipboard API may be blocked in some browser contexts.
-      const ta=document.createElement("textarea");
-      ta.value=url;
-      ta.setAttribute("readonly","");
-      ta.style.position="fixed";
-      ta.style.opacity="0";
-      document.body.appendChild(ta);
-      ta.select();
-      const ok=document.execCommand("copy");
-      ta.remove();
-      if(ok){
-        const old=copyChromeExtensionsBtn.textContent;
-        copyChromeExtensionsBtn.textContent="복사 완료";
-        setTimeout(()=>{ copyChromeExtensionsBtn.textContent=old; },1500);
-      }else{
-        alert("주소를 복사하지 못했습니다. chrome://extensions 를 직접 복사해주세요.");
-      }
+if (copyChromeExtensionsBtn) {
+  copyChromeExtensionsBtn.addEventListener("click", async () => {
+    const value = "chrome://extensions";
+    let copied = false;
+
+    try {
+      await navigator.clipboard.writeText(value);
+      copied = true;
+    } catch (_) {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        copied = document.execCommand("copy");
+        ta.remove();
+      } catch (_) {}
+    }
+
+    if (copied) {
+      copyChromeExtensionsBtn.textContent = "복사 완료";
+      setTimeout(() => {
+        copyChromeExtensionsBtn.textContent = "주소 복사";
+      }, 1500);
+    } else {
+      alert("주소 복사에 실패했습니다. chrome://extensions 를 직접 복사해주세요.");
     }
   });
 }
 
-// ===== Steam Chrome extension bridge (v0.7.2) =====
+// ===== Steam Chrome extension bridge (v0.7.4) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
