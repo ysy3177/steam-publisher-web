@@ -309,10 +309,11 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.3.2) =====
+// ===== Steam Chrome extension bridge (v0.4.0) =====
 let extensionConnected = false;
 
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
+const boundaryBtn = document.querySelector("#boundaryBtn");
 
 const diag = {
   bridge: [document.querySelector("#bridgeDot"), document.querySelector("#bridgeStatus")],
@@ -363,6 +364,7 @@ window.addEventListener("message", (e)=>{
 
     extensionConnected = !!(d.bridge && d.runtime);
     if(scanBtn) scanBtn.disabled = !(extensionConnected && d.steamTab);
+    if(boundaryBtn) boundaryBtn.disabled = !(extensionConnected && d.steamTab);
 
     if(scanResult){
       scanResult.className = "scan-result";
@@ -374,6 +376,16 @@ window.addEventListener("message", (e)=>{
         tabUrl: d.tabUrl || "",
         note: "이 진단은 Steam 내용을 수정하지 않습니다."
       }, null, 2))}</pre>`;
+    }
+  }
+
+  if(d.type === "BOUNDARY_RESULT"){
+    if(d.ok){
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml(JSON.stringify(d.result, null, 2))}</pre>`;
+    }else{
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml("배너 경계 확인 실패: " + (d.error || "알 수 없는 오류"))}</pre>`;
     }
   }
 
@@ -421,6 +433,20 @@ if(scanBtn){
     scanResult.textContent = "열려 있는 Steam 탭의 구조를 읽는 중...";
     document.documentElement.setAttribute("data-spw-safe-scan-request", String(Date.now()));
     window.postMessage({source:"steam-publisher-web", type:"SAFE_SCAN_REQUEST"}, "*");
+  });
+}
+
+
+if(boundaryBtn){
+  boundaryBtn.addEventListener("click", ()=>{
+    if(!extensionConnected){
+      alert("먼저 연결 상태 진단을 실행해주세요.");
+      return;
+    }
+    scanResult.className = "scan-result empty";
+    scanResult.textContent = "Steam 편집기에서 제목·본문·상단/하단 배너 경계를 표시하는 중...";
+    document.documentElement.setAttribute("data-spw-boundary-request", String(Date.now()));
+    window.postMessage({source:"steam-publisher-web", type:"BOUNDARY_REQUEST"}, "*");
   });
 }
 
