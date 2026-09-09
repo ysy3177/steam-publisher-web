@@ -14,6 +14,39 @@ let selectedFile = null;
 let parsed = {};
 let selectedLanguages = new Set(SUPPORTED.map(x=>x.code));
 
+const MIN_EXTENSION_VERSION = "0.8.1";
+let extensionVersionBlocked = false;
+let extensionVersionWarningShown = false;
+
+function compareVersions(a,b){
+  const pa=String(a||"").replace(/^v/i,"").split(".").map(n=>parseInt(n,10)||0);
+  const pb=String(b||"").replace(/^v/i,"").split(".").map(n=>parseInt(n,10)||0);
+  const len=Math.max(pa.length,pb.length);
+  for(let i=0;i<len;i++){
+    const av=pa[i]||0, bv=pb[i]||0;
+    if(av>bv) return 1;
+    if(av<bv) return -1;
+  }
+  return 0;
+}
+
+function checkExtensionVersion(version){
+  if(!version) return true;
+  const outdated=compareVersions(version, MIN_EXTENSION_VERSION)<0;
+  extensionVersionBlocked=outdated;
+  if(outdated && !extensionVersionWarningShown){
+    extensionVersionWarningShown=true;
+    alert(
+      "설치된 확장 프로그램이 구버전입니다.\n\n" +
+      "현재 버전: v" + String(version).replace(/^v/i,"") + "\n" +
+      "필요한 버전: v" + MIN_EXTENSION_VERSION + "\n\n" +
+      "최신 확장 프로그램을 다운로드한 뒤 다시 로드해주세요.\n" +
+      "기존 확장 프로그램은 삭제 혹은 비활성화해주세요."
+    );
+  }
+  return !outdated;
+}
+
 const $ = s => document.querySelector(s);
 const fileInput = $("#fileInput");
 const analyzeBtn = $("#analyzeBtn");
@@ -1215,9 +1248,11 @@ window.addEventListener("message", (e)=>{
 
   if(d.type === "EXTENSION_READY"){
     setDiag("bridge","ok","웹페이지와 연결됨");
+    if(d.version) checkExtensionVersion(d.version);
   }
 
   if(d.type === "FULL_DIAGNOSTIC_RESULT"){
+    if(d.runtime && d.version) checkExtensionVersion(d.version);
     setDiag("bridge", d.bridge ? "ok" : "bad", d.bridge ? "웹페이지와 연결됨" : "웹페이지 연결 실패");
     setDiag("runtime", d.runtime ? "ok" : "bad", d.runtime ? `확장 프로그램 실행 중 (v${d.version || "?"})` : "확장 프로그램 응답 없음");
     setDiag("steamTab", d.steamTab ? "ok" : "bad", d.steamTab ? `Steam 탭 발견: ${d.tabTitle || ""}` : "열려 있는 Steam 탭 없음");
@@ -1389,6 +1424,15 @@ if(krTestBtn){
 
 if(multiTestBtn){
   multiTestBtn.addEventListener("click", ()=>{
+    if(extensionVersionBlocked){
+      alert(
+        "설치된 확장 프로그램이 구버전이라 Steam 공지를 적용할 수 없습니다.\n\n" +
+        "필요한 버전: v" + MIN_EXTENSION_VERSION + "\n\n" +
+        "최신 확장 프로그램을 다운로드한 뒤 다시 로드해주세요.\n" +
+        "기존 확장 프로그램은 삭제 혹은 비활성화해주세요."
+      );
+      return;
+    }
     const APPLY_ORDER = ["KR","EN","JP","CN","TW","TH","RU"];
     const selectedCodes = APPLY_ORDER.filter(code => selectedLanguages.has(code));
 
