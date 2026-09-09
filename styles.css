@@ -292,3 +292,33 @@ button:disabled{opacity:.45;cursor:not-allowed}
   accent-color:#60a5fa;
   flex:0 0 auto;
 }
+
+
+/* v0.8.0: make language checkboxes clearly visible */
+.lang-card.selectable{
+  position:relative;
+  cursor:pointer;
+}
+.lang-card-head{
+  display:flex!important;
+  align-items:center!important;
+  gap:10px!important;
+}
+.lang-toggle{
+  appearance:auto!important;
+  -webkit-appearance:checkbox!important;
+  display:inline-block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  width:20px!important;
+  height:20px!important;
+  min-width:20px!important;
+  margin:0!important;
+  position:static!important;
+}
+.lang-card.selectable:not(.selected){
+  opacity:.48;
+}
+.lang-card.selectable.selected{
+  opacity:1;
+}
