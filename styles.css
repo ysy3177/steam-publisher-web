@@ -72,3 +72,13 @@ button:disabled{opacity:.45;cursor:not-allowed}
   .steam-grid{grid-template-columns:1fr}
   .section-title-row,.hero,.connection-card{align-items:stretch;flex-direction:column}
 }
+
+
+/* v0.2.1 - Word 문서의 빈 문단(공백 줄)을 미리보기에서도 보존 */
+.preview p.docx-empty-line {
+  min-height: 1.15em;
+  margin: 0 0 0.55em 0;
+}
+.preview p.docx-empty-line::before {
+  content: "\00a0";
+}

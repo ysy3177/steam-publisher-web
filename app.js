@@ -81,15 +81,82 @@ function splitByLanguage(container){
   });
   flush(); return out;
 }
+function isImageOnlyBlock(el){
+  if(!el) return false;
+  const text=normalizeText(el.textContent);
+  const hasImage=!!el.querySelector("img");
+  const hasOtherMeaningful=[...el.querySelectorAll("*")].some(node=>{
+    const tag=node.tagName ? node.tagName.toLowerCase() : "";
+    return !["img","br","span","a"].includes(tag) && normalizeText(node.textContent);
+  });
+  return hasImage && !text && !hasOtherMeaningful;
+}
+
+function isBlankBlock(el){
+  if(!el) return true;
+  return !normalizeText(el.textContent) && !el.querySelector("img,table,iframe,video");
+}
+
+function isExcludeMarker(el){
+  const t=normalizeText(el.textContent)
+    .replace(/[＜＞<>]/g,"")
+    .replace(/\s+/g,"");
+  return t.includes("아래내용제외");
+}
+
+function markVisibleBlankLines(container){
+  [...container.children].forEach(el=>{
+    if(el.tagName && el.tagName.toLowerCase()==="p" && isBlankBlock(el)){
+      el.classList.add("docx-empty-line");
+      if(!el.innerHTML.trim()) el.innerHTML="<br>";
+    }
+  });
+}
+
 function extractTitleAndBody(html){
-  const box=document.createElement("div"); box.innerHTML=html;
+  const box=document.createElement("div");
+  box.innerHTML=html;
+
   const candidates=[...box.children].filter(el=>normalizeText(el.textContent));
   if(!candidates.length) return {title:"",bodyHtml:""};
+
   const titlePattern=/(패치\s*안내|patch\s*notice|ご案内|公告|ประกาศ)/i;
   const titleEl=candidates.find(el=>titlePattern.test(normalizeText(el.textContent)))||candidates[0];
   const title=normalizeText(titleEl.textContent);
-  const all=[...box.children], idx=all.indexOf(titleEl), bodyBox=document.createElement("div");
-  if(idx>=0) all.slice(idx+1).forEach(el=>bodyBox.appendChild(el.cloneNode(true)));
+
+  const all=[...box.children];
+  const titleIndex=all.indexOf(titleEl);
+  let bodyNodes=titleIndex>=0 ? all.slice(titleIndex+1) : [];
+
+  // 1) "< 아래 내용 제외 >"가 있으면 그 문단부터 뒤는 전부 제외.
+  const excludeIndex=bodyNodes.findIndex(isExcludeMarker);
+  if(excludeIndex>=0){
+    bodyNodes=bodyNodes.slice(0,excludeIndex);
+  }
+
+  // 2) 제목 직후의 기존 상단 배너와 그 주변 빈 문단 제거.
+  while(bodyNodes.length && (isBlankBlock(bodyNodes[0]) || isImageOnlyBlock(bodyNodes[0]))){
+    bodyNodes.shift();
+  }
+
+  // 3) 문서 끝(또는 제외 마커 직전)의 기존 하단 배너 제거.
+  //    일반 콘텐츠 이미지는 유지하고, "끝쪽의 이미지 전용 블록"만 배너로 취급.
+  while(bodyNodes.length && isBlankBlock(bodyNodes[bodyNodes.length-1])){
+    bodyNodes.pop();
+  }
+  if(bodyNodes.length && isImageOnlyBlock(bodyNodes[bodyNodes.length-1])){
+    bodyNodes.pop();
+    while(bodyNodes.length && isBlankBlock(bodyNodes[bodyNodes.length-1])){
+      bodyNodes.pop();
+    }
+  }
+
+  const bodyBox=document.createElement("div");
+  bodyNodes.forEach(el=>bodyBox.appendChild(el.cloneNode(true)));
+
+  // 4) Word의 빈 문단을 브라우저에서도 실제 한 줄 공백으로 보이게 처리.
+  markVisibleBlankLines(bodyBox);
+
   return {title,bodyHtml:bodyBox.innerHTML.trim()};
 }
 async function analyze(){
