@@ -309,7 +309,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.5.1) =====
+// ===== Steam Chrome extension bridge (v0.5.2) =====
 let extensionConnected = false;
 
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
@@ -479,15 +479,33 @@ if(krTestBtn){
     );
     if(!ok) return;
 
+    const titlePayload = String(kr.title || "");
+    const bodyPayload = String(kr.bodyHtml || "");
+
+    if(!bodyPayload.trim()){
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml(
+        "웹앱 단계에서 KR 본문이 비어 있습니다.\n" +
+        `titleLength=${titlePayload.length}, bodyHtmlLength=${bodyPayload.length}\n` +
+        "문서 미리보기에는 본문이 보인다면 브라우저 캐시 문제일 가능성이 큽니다."
+      )}</pre>`;
+      return;
+    }
+
     scanResult.className = "scan-result empty";
-    scanResult.textContent = "한국어 제목과 두 배너 사이 본문을 Steam 화면에 임시 적용하는 중...";
+    scanResult.textContent =
+      `한국어 임시 적용 중... (제목 ${titlePayload.length}자 / 본문 HTML ${bodyPayload.length}자)`;
 
     window.postMessage({
       source:"steam-publisher-web",
       type:"KR_UNSAVED_TEST_REQUEST",
       payload:{
-        title: kr.title || "",
-        bodyHtml: kr.bodyHtml || ""
+        title: titlePayload,
+        bodyHtml: bodyPayload,
+        debug:{
+          titleLength:titlePayload.length,
+          bodyHtmlLength:bodyPayload.length
+        }
       }
     }, "*");
   });
