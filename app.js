@@ -1349,16 +1349,7 @@ if(multiTestBtn){
       return;
     }
 
-    const ok = confirm(
-      "테스트용 복제 공지에서 7개 언어를 순서대로 전환하며 임시 적용합니다.\\n\\n" +
-      "KR → EN → JP → CN → TW → TH → RU(EN 내용 사용)\\n\\n" +
-      "• 저장/게시 버튼은 누르지 않습니다.\\n" +
-      "• 각 언어의 기존 상단/하단 배너는 유지합니다.\\n" +
-      "• 실패하면 즉시 중단합니다.\\n" +
-      "• 마지막에는 한국어 화면으로 돌아옵니다.\\n" +
-      "• Steam 탭을 새로고침하면 저장된 원본으로 돌아갑니다.\\n\\n" +
-      "계속할까요?"
-    );
+    const ok = confirm("Steam 공지 적용을 진행합니다.");
     if(!ok) return;
 
     setRunStatus("running","Steam 공지 적용 중…","KR → EN → JP → CN → TW → TH → RU 순서로 진행 중");
