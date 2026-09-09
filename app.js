@@ -309,7 +309,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.5.5) =====
+// ===== Steam Chrome extension bridge (v0.6.0) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
@@ -323,6 +323,7 @@ let extensionConnected = false;
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
 const boundaryBtn = document.querySelector("#boundaryBtn");
 const krTestBtn = document.querySelector("#krTestBtn");
+const multiTestBtn = document.querySelector("#multiTestBtn");
 
 const diag = {
   bridge: [document.querySelector("#bridgeDot"), document.querySelector("#bridgeStatus")],
@@ -375,6 +376,7 @@ window.addEventListener("message", (e)=>{
     if(scanBtn) scanBtn.disabled = !(extensionConnected && d.steamTab);
     if(boundaryBtn) boundaryBtn.disabled = !(extensionConnected && d.steamTab);
     if(krTestBtn) krTestBtn.disabled = !(extensionConnected && d.steamTab);
+    if(multiTestBtn) multiTestBtn.disabled = !(extensionConnected && d.steamTab);
 
     if(scanResult){
       scanResult.className = "scan-result";
@@ -386,6 +388,16 @@ window.addEventListener("message", (e)=>{
         tabUrl: d.tabUrl || "",
         note: "이 진단은 Steam 내용을 수정하지 않습니다."
       }, null, 2))}</pre>`;
+    }
+  }
+
+  if(d.type === "MULTI_UNSAVED_TEST_RESULT"){
+    if(d.ok){
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml(JSON.stringify(d.result, null, 2))}</pre>`;
+    }else{
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml("7개 언어 미저장 테스트 실패: " + (d.error || "알 수 없는 오류"))}</pre>`;
     }
   }
 
@@ -515,6 +527,55 @@ if(krTestBtn){
           bodyHtmlLength:bodyPayload.length
         }
       }
+    }, "*");
+  });
+}
+
+
+if(multiTestBtn){
+  multiTestBtn.addEventListener("click", ()=>{
+    const required = ["KR","EN","JP","CN","TW","TH"];
+    const missing = required.filter(code => !parsed[code]);
+    if(missing.length){
+      alert("DOCX에서 다음 언어를 찾지 못했습니다: " + missing.join(", "));
+      return;
+    }
+
+    const payloads = {
+      KR:{source:"KR", title:String(parsed.KR.title||""), bodyHtml:String(parsed.KR.bodyHtml||"")},
+      EN:{source:"EN", title:String(parsed.EN.title||""), bodyHtml:String(parsed.EN.bodyHtml||"")},
+      JP:{source:"JP", title:String(parsed.JP.title||""), bodyHtml:String(parsed.JP.bodyHtml||"")},
+      CN:{source:"CN", title:String(parsed.CN.title||""), bodyHtml:String(parsed.CN.bodyHtml||"")},
+      TW:{source:"TW", title:String(parsed.TW.title||""), bodyHtml:String(parsed.TW.bodyHtml||"")},
+      TH:{source:"TH", title:String(parsed.TH.title||""), bodyHtml:String(parsed.TH.bodyHtml||"")},
+      RU:{source:"EN", title:String(parsed.EN.title||""), bodyHtml:String(parsed.EN.bodyHtml||"")}
+    };
+
+    const empty = Object.entries(payloads).filter(([_,v]) => !v.title.trim() || !v.bodyHtml.trim()).map(([k])=>k);
+    if(empty.length){
+      alert("제목 또는 본문이 비어 있는 언어가 있어 중단합니다: " + empty.join(", "));
+      return;
+    }
+
+    const ok = confirm(
+      "테스트용 복제 공지에서 7개 언어를 순서대로 전환하며 임시 적용합니다.\\n\\n" +
+      "KR → EN → JP → CN → TW → TH → RU(EN 내용 사용)\\n\\n" +
+      "• 저장/게시 버튼은 누르지 않습니다.\\n" +
+      "• 각 언어의 기존 상단/하단 배너는 유지합니다.\\n" +
+      "• 실패하면 즉시 중단합니다.\\n" +
+      "• 마지막에는 한국어 화면으로 돌아옵니다.\\n" +
+      "• Steam 탭을 새로고침하면 저장된 원본으로 돌아갑니다.\\n\\n" +
+      "계속할까요?"
+    );
+    if(!ok) return;
+
+    scanResult.className = "scan-result empty";
+    scanResult.textContent = "7개 언어를 순서대로 전환하며 미저장 적용 중... Steam 탭은 건드리지 말아주세요.";
+
+    window.postMessage({
+      source:"steam-publisher-web",
+      type:"MULTI_UNSAVED_TEST_REQUEST",
+      payload:{languages:payloads}
     }, "*");
   });
 }
