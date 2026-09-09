@@ -140,3 +140,13 @@ button:disabled{opacity:.45;cursor:not-allowed}
   background:#363b43;
 }
 .preview .steam-table-cell-p{margin:0!important}
+
+/* v0.6.5 deterministic Word formatting */
+.preview p,.preview li{white-space:pre-wrap}
+.preview hr.docx-separator{display:block;width:100%;border:0!important;border-top:1px solid rgba(145,155,165,.85)!important;margin:14px 0 0!important;padding:0!important;height:0!important}
+.preview p.docx-separator-gap{display:block;height:1.15em;line-height:1.15em;margin:0!important;padding:0!important}
+.preview table.steam-docx-table{width:100%!important;border-collapse:collapse!important;table-layout:auto!important;margin:10px 0 14px!important;color:#eef2f6!important;background:transparent!important}
+.preview table.steam-docx-table tr{background:#343941!important}
+.preview table.steam-docx-table tr:first-child{background:#565d67!important}
+.preview table.steam-docx-table th,.preview table.steam-docx-table td{border:1px solid #727982!important;padding:6px 8px!important;vertical-align:middle!important;text-align:left!important;color:#eef2f6!important;background:transparent!important}
+.preview table.steam-docx-table th{font-weight:700!important}

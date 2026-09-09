@@ -106,16 +106,21 @@ function markVisibleBlankLines(container){
   });
 }
 
-function extractTitleAndBody(html){
+function extractTitleAndBody(html, titleHint=""){
   const box=document.createElement("div");
   box.innerHTML=html;
 
   const candidates=[...box.children].filter(el=>normalizeText(el.textContent));
   if(!candidates.length) return {title:"",bodyHtml:""};
 
-  const titlePattern=/(패치\s*안내|patch\s*notice|ご案内|公告|ประกาศ)/i;
-  const titleEl=candidates.find(el=>titlePattern.test(normalizeText(el.textContent)))||candidates[0];
-  const title=normalizeText(titleEl.textContent);
+  const exactHint=normalizeText(titleHint);
+  const titlePattern=/(패치\s*안내|patch\s*notice|ご案内|公告|ประกาศ|notice|update)/i;
+  let titleEl=exactHint ? candidates.find(el=>normalizeText(el.textContent)===exactHint) : null;
+  if(!titleEl){
+    const short=candidates.filter(el=>{const t=normalizeText(el.textContent);return t && t.length<=80;});
+    titleEl=short.find(el=>titlePattern.test(normalizeText(el.textContent))) || short[short.length-1] || candidates[0];
+  }
+  const title=normalizeText(exactHint || titleEl.textContent).split(/[\r\n]/)[0].slice(0,80);
 
   const all=[...box.children];
   const titleIndex=all.indexOf(titleEl);
@@ -158,6 +163,129 @@ function xmlText(el){
 }
 
 
+
+
+async function extractTitleHints(arrayBuffer){
+  try{
+    const zip=await JSZip.loadAsync(arrayBuffer);
+    const raw=await zip.file("word/document.xml").async("string");
+    const xml=new DOMParser().parseFromString(raw,"application/xml");
+    const body=xml.getElementsByTagNameNS("*","body")[0];
+    if(!body) return {};
+
+    const out={};
+    let current=null;
+    let beforeBanner=[];
+    let bannerSeen=false;
+
+    function flush(){
+      if(!current || !beforeBanner.length) return;
+      // The announcement title is the last non-empty text paragraph before
+      // the first image banner. This also skips KR-style internal work labels.
+      const texts=beforeBanner.map(normalizeText).filter(Boolean);
+      if(texts.length) out[current]=texts[texts.length-1];
+    }
+
+    for(const el of [...body.children]){
+      const local=(el.localName||"").toLowerCase();
+      if(local!=="p") continue;
+      const txt=normalizeText(xmlText(el));
+      const upper=txt.toUpperCase();
+      if(SECTION_CODES.includes(upper)){
+        flush(); current=upper; beforeBanner=[]; bannerSeen=false; continue;
+      }
+      if(!current || bannerSeen) continue;
+
+      const hasImage=el.getElementsByTagNameNS("*","blip").length>0 ||
+                     el.getElementsByTagNameNS("*","imagedata").length>0;
+      if(hasImage){
+        bannerSeen=true;
+        flush();
+        continue;
+      }
+      if(txt) beforeBanner.push(txt);
+    }
+    flush();
+    return out;
+  }catch(err){
+    console.warn("제목 힌트 추출 실패",err);
+    return {};
+  }
+}
+
+async function extractIndentHints(arrayBuffer){
+  try{
+    const zip=await JSZip.loadAsync(arrayBuffer);
+    const raw=await zip.file("word/document.xml").async("string");
+    const xml=new DOMParser().parseFromString(raw,"application/xml");
+    const body=xml.getElementsByTagNameNS("*","body")[0];
+    if(!body) return {};
+    const out={}; let current=null;
+    const wns="http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const attr=(el,n)=>el?.getAttributeNS(wns,n)||el?.getAttribute("w:"+n)||el?.getAttribute(n)||"";
+
+    for(const el of [...body.children]){
+      if((el.localName||"").toLowerCase()!=="p") continue;
+      const txt=normalizeText(xmlText(el));
+      const upper=txt.toUpperCase();
+      if(SECTION_CODES.includes(upper)){current=upper;if(!out[current])out[current]=[];continue;}
+      if(!current || !txt) continue;
+      const ind=el.getElementsByTagNameNS("*","ind")[0];
+      if(!ind) continue;
+      const left=Number(attr(ind,"left")||attr(ind,"start")||0);
+      const first=Number(attr(ind,"firstLine")||0);
+      const hanging=Number(attr(ind,"hanging")||0);
+      if(left||first||hanging) out[current].push({text:txt,left,first,hanging});
+    }
+    return out;
+  }catch(err){
+    console.warn("들여쓰기 힌트 추출 실패",err);
+    return {};
+  }
+}
+
+function prependNbsp(el,count){
+  if(!el || count<=0) return;
+  const prefix="\u00a0".repeat(Math.min(16,count));
+  const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,null);
+  const node=walker.nextNode();
+  if(node) node.nodeValue=prefix+(node.nodeValue||"");
+  else el.insertBefore(document.createTextNode(prefix),el.firstChild);
+}
+
+function applyIndentHints(bodyHtml,hints){
+  if(!hints || !hints.length) return bodyHtml;
+  const box=document.createElement("div"); box.innerHTML=bodyHtml;
+  const blocks=[...box.querySelectorAll("p,li")].filter(el=>!el.closest("table"));
+  for(const h of hints){
+    const target=normalizeText(h.text);
+    const block=blocks.find(el=>normalizeText(el.textContent)===target);
+    if(!block) continue;
+    // Roughly one visual text space per 180 twips. Keep it conservative.
+    const effective=Math.max(0,Number(h.left||0)+Number(h.first||0)-Number(h.hanging||0));
+    const spaces=Math.min(12,Math.round(effective/180));
+    prependNbsp(block,spaces);
+  }
+  return box.innerHTML;
+}
+
+function preserveInlineWhitespace(bodyHtml){
+  const box=document.createElement("div"); box.innerHTML=bodyHtml;
+  const walker=document.createTreeWalker(box,NodeFilter.SHOW_TEXT,null);
+  let node;
+  while((node=walker.nextNode())){
+    const parent=node.parentElement;
+    if(!parent || /^(SCRIPT|STYLE)$/i.test(parent.tagName)) continue;
+    let t=node.nodeValue||"";
+    t=t.replace(/\t/g,"\u00a0\u00a0\u00a0\u00a0");
+    // Preserve leading/trailing spaces and every run of 2+ spaces.
+    t=t.replace(/^ +/,m=>"\u00a0".repeat(m.length));
+    t=t.replace(/ +$/,m=>"\u00a0".repeat(m.length));
+    t=t.replace(/ {2,}/g,m=>"\u00a0".repeat(m.length-1)+" ");
+    node.nodeValue=t;
+  }
+  return box.innerHTML;
+}
 
 async function extractManualLineBreakHints(arrayBuffer){
   try{
@@ -453,134 +581,141 @@ async function extractSeparatorHints(arrayBuffer){
   try{
     const zip=await JSZip.loadAsync(arrayBuffer);
     const raw=await zip.file("word/document.xml").async("string");
+    const stylesRaw=zip.file("word/styles.xml") ? await zip.file("word/styles.xml").async("string") : "";
     const xml=new DOMParser().parseFromString(raw,"application/xml");
+    const stylesXml=stylesRaw ? new DOMParser().parseFromString(stylesRaw,"application/xml") : null;
     const body=xml.getElementsByTagNameNS("*","body")[0];
     if(!body) return {};
+    const wns="http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const wVal=(el,n)=>el?.getAttributeNS(wns,n)||el?.getAttribute("w:"+n)||el?.getAttribute(n)||"";
 
-    const out={};
-    let current=null;
-    const paragraphs=[...body.children].filter(el=>(el.localName||"").toLowerCase()==="p");
+    const styleMap=new Map();
+    if(stylesXml){
+      for(const st of [...stylesXml.getElementsByTagNameNS("*","style")]){
+        const id=wVal(st,"styleId"); if(!id) continue;
+        const based=st.getElementsByTagNameNS("*","basedOn")[0];
+        const pPr=[...st.children].find(x=>(x.localName||"").toLowerCase()==="ppr")||null;
+        styleMap.set(id,{pPr,basedOn:based?wVal(based,"val"):""});
+      }
+    }
+    const pPrOf=el=>[...el.children].find(x=>(x.localName||"").toLowerCase()==="ppr")||null;
+    const borderOf=(pPr,side)=>{
+      if(!pPr) return null;
+      const b=[...pPr.children].find(x=>(x.localName||"").toLowerCase()==="pbdr");
+      return b ? [...b.children].find(x=>(x.localName||"").toLowerCase()===side)||null : null;
+    };
+    const visibleBorder=b=>{
+      if(!b) return false; const val=String(wVal(b,"val")||"");
+      const sz=Number(wVal(b,"sz")||0);
+      return !/^(nil|none|0)?$/i.test(val) && (sz>0 || !!val);
+    };
+    const styleIdOf=el=>{
+      const pPr=pPrOf(el); if(!pPr) return "";
+      const ps=[...pPr.children].find(x=>(x.localName||"").toLowerCase()==="pstyle");
+      return ps?wVal(ps,"val"):"";
+    };
+    function styleHasBorder(id,side,seen=new Set()){
+      if(!id||seen.has(id)) return false; seen.add(id);
+      const st=styleMap.get(id); if(!st) return false;
+      if(visibleBorder(borderOf(st.pPr,side))) return true;
+      return styleHasBorder(st.basedOn,side,seen);
+    }
+    const paragraphHasBorder=(el,side)=>visibleBorder(borderOf(pPrOf(el),side))||styleHasBorder(styleIdOf(el),side);
 
-    function borderIsVisible(el, side){
-      const pPr=[...el.children].find(x=>(x.localName||"").toLowerCase()==="ppr");
-      if(!pPr) return false;
-      const pBdr=[...pPr.children].find(x=>(x.localName||"").toLowerCase()==="pbdr");
-      if(!pBdr) return false;
-      const border=[...pBdr.children].find(x=>(x.localName||"").toLowerCase()===side);
-      if(!border) return false;
-      const val=border.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main","val")
-        || border.getAttribute("w:val") || border.getAttribute("val") || "";
-      const sz=Number(border.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main","sz")
-        || border.getAttribute("w:sz") || border.getAttribute("sz") || 0);
-      return !/^(nil|none|0)?$/i.test(String(val)) && sz>0;
+    function isShapeLine(el){
+      if(normalizeText(xmlText(el))) return false;
+      if(el.getElementsByTagNameNS("*","blip").length || el.getElementsByTagNameNS("*","imagedata").length) return false;
+      return el.getElementsByTagNameNS("*","pict").length>0 ||
+             el.getElementsByTagNameNS("*","wsp").length>0 ||
+             el.getElementsByTagNameNS("*","ln").length>0;
     }
 
-    function isShapeOnlySeparator(el){
-      const text=normalizeText(xmlText(el));
-      if(text) return false;
-      const drawings=el.getElementsByTagNameNS("*","drawing");
-      const picts=el.getElementsByTagNameNS("*","pict");
-      if(!drawings.length && !picts.length) return false;
+    const out={}; let current=null;
+    const kids=[...body.children];
+    function prevText(i){for(let j=i-1;j>=0;j--){const t=normalizeText(xmlText(kids[j]));if(t&&!SECTION_CODES.includes(t.toUpperCase()))return t;}return "";}
+    function nextText(i){for(let j=i+1;j<kids.length;j++){const t=normalizeText(xmlText(kids[j]));if(t&&!SECTION_CODES.includes(t.toUpperCase()))return t;}return "";}
 
-      // Image drawings contain a:blip. A line/shape normally does not.
-      const blips=el.getElementsByTagNameNS("*","blip");
-      if(blips.length) return false;
-
-      const lines=el.getElementsByTagNameNS("*","ln");
-      const shapes=el.getElementsByTagNameNS("*","wsp");
-      return !!(lines.length || shapes.length || picts.length);
-    }
-
-    for(let i=0;i<paragraphs.length;i++){
-      const el=paragraphs[i];
-      const txt=normalizeText(xmlText(el));
-      const upper=txt.toUpperCase();
-      if(SECTION_CODES.includes(upper)){
-        current=upper;
-        if(!out[current]) out[current]=[];
-        continue;
-      }
-      if(!current) continue;
-
-      if(txt){
-        if(borderIsVisible(el,"top")) out[current].push({kind:"before", anchor:txt});
-        if(borderIsVisible(el,"bottom")) out[current].push({kind:"after", anchor:txt});
-      }
-
-      if(isShapeOnlySeparator(el)){
-        let prev="", next="";
-        for(let j=i-1;j>=0;j--){
-          const t=normalizeText(xmlText(paragraphs[j]));
-          if(t && !SECTION_CODES.includes(t.toUpperCase())){ prev=t; break; }
+    for(let i=0;i<kids.length;i++){
+      const el=kids[i], local=(el.localName||"").toLowerCase();
+      if(local==="p"){
+        const txt=normalizeText(xmlText(el)), upper=txt.toUpperCase();
+        if(SECTION_CODES.includes(upper)){current=upper;if(!out[current])out[current]=[];continue;}
+        if(!current) continue;
+        if(txt && paragraphHasBorder(el,"top")) out[current].push({kind:"before",anchor:txt});
+        if(txt && paragraphHasBorder(el,"bottom")) out[current].push({kind:"after",anchor:txt});
+        if(isShapeLine(el)){
+          const prev=prevText(i), next=nextText(i);
+          if(prev) out[current].push({kind:"after",anchor:prev}); else if(next) out[current].push({kind:"before",anchor:next});
         }
-        for(let j=i+1;j<paragraphs.length;j++){
-          const t=normalizeText(xmlText(paragraphs[j]));
-          if(t && !SECTION_CODES.includes(t.toUpperCase())){ next=t; break; }
+      }else if(local==="tbl" && current){
+        // Empty 1x1 bordered table is another common Word horizontal rule representation.
+        const text=normalizeText(xmlText(el));
+        const rows=el.getElementsByTagNameNS("*","tr").length;
+        const cells=el.getElementsByTagNameNS("*","tc").length;
+        if(!text && rows===1 && cells===1){
+          const prev=prevText(i), next=nextText(i);
+          if(prev) out[current].push({kind:"after",anchor:prev}); else if(next) out[current].push({kind:"before",anchor:next});
         }
-        if(prev) out[current].push({kind:"after", anchor:prev, fallbackNext:next});
-        else if(next) out[current].push({kind:"before", anchor:next});
       }
     }
     return out;
-  }catch(err){
-    console.warn("구분선 힌트 추출 실패",err);
-    return {};
-  }
+  }catch(err){console.warn("구분선 힌트 추출 실패",err);return {};}
 }
 
-function insertRecoveredSeparators(bodyHtml, hints, titleText){
-  if(!hints || !hints.length) return bodyHtml;
-  const box=document.createElement("div");
-  box.innerHTML=bodyHtml;
+function insertRecoveredSeparators(bodyHtml,hints,titleText){
+  const box=document.createElement("div"); box.innerHTML=bodyHtml;
+  // Existing HRs from Mammoth are valid separators too.
+  [...box.querySelectorAll("hr")].forEach(hr=>hr.classList.add("docx-separator"));
   const titleNorm=normalizeText(titleText);
-
-  function findBlock(anchor){
-    const target=normalizeText(anchor);
-    if(!target || target===titleNorm) return null;
-    const candidates=[...box.querySelectorAll("p,li,div,td,th")];
-    return candidates.find(el=>normalizeText(el.textContent)===target)
-      || candidates.find(el=>normalizeText(el.textContent).includes(target));
+  const isGap=el=>!!el && (el.classList?.contains("docx-real-gap")||el.classList?.contains("docx-empty-line")||el.classList?.contains("docx-separator-gap")||(el.tagName==="P"&&!normalizeText(el.textContent)&&!el.querySelector("img,table")));
+  const findBlock=anchor=>{
+    const t=normalizeText(anchor); if(!t||t===titleNorm) return null;
+    const els=[...box.querySelectorAll("p,li,div")].filter(el=>!el.closest("table"));
+    return els.find(el=>normalizeText(el.textContent)===t)||els.find(el=>normalizeText(el.textContent).includes(t));
+  };
+  for(const h of (hints||[])){
+    const block=findBlock(h.anchor); if(!block) continue;
+    const sibling=h.kind==="before"?block.previousElementSibling:block.nextElementSibling;
+    if(sibling?.matches?.("hr.docx-separator")) continue;
+    const hr=document.createElement("hr"); hr.className="docx-separator";
+    if(h.kind==="before") block.before(hr); else block.after(hr);
   }
-
-  for(const hint of hints){
-    const block=findBlock(hint.anchor);
-    if(!block) continue;
-
-    const sibling = hint.kind==="before" ? block.previousElementSibling : block.nextElementSibling;
-    if(sibling && sibling.tagName==="HR" && sibling.classList.contains("docx-separator")) continue;
-
-    const hr=document.createElement("hr");
-    hr.className="docx-separator";
-    if(hint.kind==="before") block.parentNode.insertBefore(hr,block);
-    else block.parentNode.insertBefore(hr,block.nextSibling);
+  // Make separator spacing deterministic across all languages: no inherited
+  // blank paragraphs directly around it, exactly one blank line after it.
+  for(const hr of [...box.querySelectorAll("hr.docx-separator")]){
+    while(isGap(hr.previousElementSibling)) hr.previousElementSibling.remove();
+    while(isGap(hr.nextElementSibling)) hr.nextElementSibling.remove();
+    const gap=document.createElement("p"); gap.className="docx-separator-gap"; gap.innerHTML="<br>";
+    hr.after(gap);
   }
   return box.innerHTML;
 }
 
 function normalizeTablesForSteam(bodyHtml){
-  const box=document.createElement("div");
-  box.innerHTML=bodyHtml;
-
+  const box=document.createElement("div"); box.innerHTML=bodyHtml;
   for(const table of [...box.querySelectorAll("table")]){
-    table.classList.add("steam-docx-table");
-
-    // Steam's editor looks cleaner when the first row is a true header row.
-    const firstRow=table.querySelector("tr");
-    if(firstRow){
-      for(const cell of [...firstRow.children]){
-        if(cell.tagName!=="TD") continue;
-        const th=document.createElement("th");
-        for(const attr of [...cell.attributes]) th.setAttribute(attr.name,attr.value);
-        while(cell.firstChild) th.appendChild(cell.firstChild);
-        cell.replaceWith(th);
+    if(!normalizeText(table.textContent) && !table.querySelector("img")){
+      const hr=document.createElement("hr"); hr.className="docx-separator"; table.replaceWith(hr); continue;
+    }
+    table.className="steam-docx-table";
+    [...table.attributes].forEach(a=>{if(a.name!=="class")table.removeAttribute(a.name);});
+    const first=table.querySelector("tr");
+    if(first){
+      for(const cell of [...first.children]){
+        if(cell.tagName==="TD"){
+          const th=document.createElement("th");
+          while(cell.firstChild) th.appendChild(cell.firstChild);
+          cell.replaceWith(th);
+        }
       }
     }
-
-    // Word/Mammoth often wraps each cell in a <p>. Keep the text/formatting,
-    // but remove paragraph margins by marking those wrappers.
+    for(const el of [...table.querySelectorAll("tr,td,th")]){
+      [...el.attributes].forEach(a=>el.removeAttribute(a.name));
+    }
     for(const cell of [...table.querySelectorAll("td,th")]){
-      for(const para of [...cell.children]){
-        if(para.tagName==="P") para.classList.add("steam-table-cell-p");
+      for(const para of [...cell.querySelectorAll(":scope > p")]){
+        while(para.firstChild) cell.insertBefore(para.firstChild,para);
+        para.remove();
       }
     }
   }
@@ -593,6 +728,8 @@ async function analyze(){
   try{
     const arrayBuffer=await selectedFile.arrayBuffer();
     const blankHints=await extractBlankLineHints(arrayBuffer.slice(0));
+    const titleHints=await extractTitleHints(arrayBuffer.slice(0));
+    const indentHints=await extractIndentHints(arrayBuffer.slice(0));
     const paragraphHints=await extractParagraphHints(arrayBuffer.slice(0));
     const lineBreakHints=await extractManualLineBreakHints(arrayBuffer.slice(0));
     const separatorHints=await extractSeparatorHints(arrayBuffer.slice(0));
@@ -606,12 +743,16 @@ async function analyze(){
     const sections=splitByLanguage(temp); parsed={};
     for(const code of SECTION_CODES){
       if(sections[code]){
-        const data=extractTitleAndBody(sections[code]);
+        const data=extractTitleAndBody(sections[code], titleHints[code]||"");
         data.bodyHtml=repairManualLineBreaks(data.bodyHtml, lineBreakHints[code]||[], data.title);
         data.bodyHtml=repairMergedParagraphs(data.bodyHtml, paragraphHints[code]||[], data.title);
         data.bodyHtml=insertRecoveredBlankLines(data.bodyHtml, blankHints[code]||[], data.title);
         data.bodyHtml=insertRecoveredSeparators(data.bodyHtml, separatorHints[code]||[], data.title);
         data.bodyHtml=normalizeTablesForSteam(data.bodyHtml);
+        // Empty tables may normalize into HRs, so normalize separator spacing once more.
+        data.bodyHtml=insertRecoveredSeparators(data.bodyHtml, [], data.title);
+        data.bodyHtml=applyIndentHints(data.bodyHtml, indentHints[code]||[]);
+        data.bodyHtml=preserveInlineWhitespace(data.bodyHtml);
         parsed[code]=data;
       }
     }
@@ -643,7 +784,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.6.4) =====
+// ===== Steam Chrome extension bridge (v0.6.5) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
@@ -900,6 +1041,11 @@ if(multiTestBtn){
     const empty = Object.entries(payloads).filter(([_,v]) => !v.title.trim() || !v.bodyHtml.trim()).map(([k])=>k);
     if(empty.length){
       alert("제목 또는 본문이 비어 있는 언어가 있어 중단합니다: " + empty.join(", "));
+      return;
+    }
+    const badTitles=Object.entries(payloads).filter(([_,v])=>v.title.length>80 || /[\r\n]/.test(v.title)).map(([k,v])=>`${k}(${v.title.length}자)`);
+    if(badTitles.length){
+      alert("Steam 제목 형식이 잘못된 언어가 있어 중단합니다: " + badTitles.join(", ") + "\n본문이 제목에 섞이지 않았는지 확인해주세요.");
       return;
     }
 
