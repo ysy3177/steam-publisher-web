@@ -158,6 +158,128 @@ function xmlText(el){
 }
 
 
+
+async function extractManualLineBreakHints(arrayBuffer){
+  try{
+    const zip=await JSZip.loadAsync(arrayBuffer);
+    const raw=await zip.file("word/document.xml").async("string");
+    const xml=new DOMParser().parseFromString(raw,"application/xml");
+    const body=xml.getElementsByTagNameNS("*","body")[0];
+    if(!body) return {};
+
+    const out={};
+    let current=null;
+
+    function paragraphLines(p){
+      const lines=[""];
+      const walker=xml.createTreeWalker(p, NodeFilter.SHOW_ELEMENT, null);
+      let node=p;
+      while(node){
+        const local=(node.localName||"").toLowerCase();
+        if(local==="t"){
+          lines[lines.length-1]+=node.textContent||"";
+        }else if(local==="br"){
+          lines.push("");
+        }else if(local==="tab"){
+          lines[lines.length-1]+="\t";
+        }
+        node=walker.nextNode();
+      }
+      return lines;
+    }
+
+    for(const el of [...body.children]){
+      if((el.localName||"").toLowerCase()!=="p") continue;
+      const full=normalizeText(xmlText(el));
+      const upper=full.toUpperCase();
+      if(SECTION_CODES.includes(upper)){
+        current=upper;
+        if(!out[current]) out[current]=[];
+        continue;
+      }
+      if(!current) continue;
+
+      const lines=paragraphLines(el);
+      if(lines.length>1){
+        out[current].push(lines);
+      }
+    }
+    return out;
+  }catch(err){
+    console.warn("수동 줄바꿈 힌트 추출 실패",err);
+    return {};
+  }
+}
+
+function insertBreakAtTextOffset(block, offset){
+  const walker=document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null);
+  let node;
+  let pos=0;
+  while((node=walker.nextNode())){
+    const len=(node.nodeValue||"").length;
+    const end=pos+len;
+
+    if(offset===pos){
+      node.parentNode.insertBefore(document.createElement("br"), node);
+      return true;
+    }
+    if(offset>pos && offset<end){
+      const tail=node.splitText(offset-pos);
+      tail.parentNode.insertBefore(document.createElement("br"), tail);
+      return true;
+    }
+    if(offset===end){
+      node.parentNode.insertBefore(document.createElement("br"), node.nextSibling);
+      return true;
+    }
+    pos=end;
+  }
+  return false;
+}
+
+function repairManualLineBreaks(bodyHtml, lineBreakHints, titleText){
+  if(!lineBreakHints || !lineBreakHints.length) return bodyHtml;
+
+  const box=document.createElement("div");
+  box.innerHTML=bodyHtml;
+  const titleNorm=normalizeText(titleText);
+
+  for(const lines of lineBreakHints){
+    if(!Array.isArray(lines) || lines.length<2) continue;
+    const sourceJoined=lines.join("");
+    const sourceNorm=normalizeText(sourceJoined);
+    if(!sourceNorm || sourceNorm===titleNorm) continue;
+
+    const blocks=[...box.querySelectorAll("p")];
+    const block=blocks.find(p=>{
+      const raw=p.textContent||"";
+      const norm=normalizeText(raw);
+      return norm===sourceNorm || raw===sourceJoined;
+    });
+    if(!block) continue;
+
+    // Mammoth may flatten Word's w:br into a continuous text stream.
+    // Re-insert the break immediately before each original line segment.
+    const raw=block.textContent||"";
+    const offsets=[];
+    let searchFrom=0;
+    for(let i=1;i<lines.length;i++){
+      const segment=lines[i];
+      if(!segment) continue;
+      const idx=raw.indexOf(segment, searchFrom);
+      if(idx>=0){
+        offsets.push(idx);
+        searchFrom=idx+segment.length;
+      }
+    }
+
+    // Insert from the end so earlier text offsets remain stable.
+    offsets.sort((a,b)=>b-a).forEach(off=>insertBreakAtTextOffset(block,off));
+  }
+
+  return box.innerHTML;
+}
+
 async function extractParagraphHints(arrayBuffer){
   try{
     const zip=await JSZip.loadAsync(arrayBuffer);
@@ -333,6 +455,7 @@ async function analyze(){
     const arrayBuffer=await selectedFile.arrayBuffer();
     const blankHints=await extractBlankLineHints(arrayBuffer.slice(0));
     const paragraphHints=await extractParagraphHints(arrayBuffer.slice(0));
+    const lineBreakHints=await extractManualLineBreakHints(arrayBuffer.slice(0));
     const result=await mammoth.convertToHtml({arrayBuffer},{
       convertImage:mammoth.images.imgElement(async image=>{
         const buffer=await image.read("base64");
@@ -344,6 +467,7 @@ async function analyze(){
     for(const code of SECTION_CODES){
       if(sections[code]){
         const data=extractTitleAndBody(sections[code]);
+        data.bodyHtml=repairManualLineBreaks(data.bodyHtml, lineBreakHints[code]||[], data.title);
         data.bodyHtml=repairMergedParagraphs(data.bodyHtml, paragraphHints[code]||[], data.title);
         data.bodyHtml=insertRecoveredBlankLines(data.bodyHtml, blankHints[code]||[], data.title);
         parsed[code]=data;
@@ -377,7 +501,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.6.2) =====
+// ===== Steam Chrome extension bridge (v0.6.3) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
