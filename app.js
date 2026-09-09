@@ -12,6 +12,7 @@ const SECTION_CODES = ["KR","JP","EN","TW","CN","TH"];
 
 let selectedFile = null;
 let parsed = {};
+let selectedLanguages = new Set(SUPPORTED.map(x=>x.code));
 
 const $ = s => document.querySelector(s);
 const fileInput = $("#fileInput");
@@ -27,6 +28,7 @@ const scanResult = $("#scanResult");
 
 function resetUI(){
   selectedFile = null; parsed = {};
+  selectedLanguages = new Set(SUPPORTED.map(x=>x.code));
   fileInput.value = "";
   analyzeBtn.disabled = true;
   fileName.textContent = "선택된 파일 없음";
@@ -53,9 +55,26 @@ dropZone.addEventListener("drop", e => chooseFile(e.dataTransfer.files[0]));
 function renderLangStatus(){
   langGrid.innerHTML = SUPPORTED.map(x=>{
     const ok = !!parsed[x.source];
-    return `<div class="lang-card"><strong>${x.steam} (${x.code})</strong><div class="${ok?'ok':'missing'}">${ok?`✓ ${x.source} 사용`:`— ${x.source} 대기`}</div></div>`;
+    const checked = selectedLanguages.has(x.code) ? "checked" : "";
+    return `<label class="lang-card selectable ${checked ? "selected" : ""}">
+      <div class="lang-card-head">
+        <input type="checkbox" class="lang-toggle" data-lang="${x.code}" ${checked}>
+        <strong>${x.steam} (${x.code})</strong>
+      </div>
+      <div class="${ok?'ok':'missing'}">${ok?`✓ ${x.source} 사용`:`— ${x.source} 대기`}</div>
+    </label>`;
   }).join("");
+
+  langGrid.querySelectorAll(".lang-toggle").forEach(input=>{
+    input.addEventListener("change", ()=>{
+      const code=input.dataset.lang;
+      if(input.checked) selectedLanguages.add(code);
+      else selectedLanguages.delete(code);
+      input.closest(".lang-card")?.classList.toggle("selected", input.checked);
+    });
+  });
 }
+
 function normalizeText(s){return (s||"").replace(/\u00a0/g," ").replace(/\s+/g," ").trim()}
 function isMarkerParagraph(p){return SECTION_CODES.includes(normalizeText(p.textContent).toUpperCase())}
 function splitByLanguage(container){
@@ -1369,29 +1388,57 @@ if(krTestBtn){
 
 if(multiTestBtn){
   multiTestBtn.addEventListener("click", ()=>{
-    const required = ["KR","EN","JP","CN","TW","TH"];
-    const missing = required.filter(code => !parsed[code]);
-    if(missing.length){
-      alert("DOCX에서 다음 언어를 찾지 못했습니다: " + missing.join(", "));
+    const APPLY_ORDER = ["KR","EN","JP","CN","TW","TH","RU"];
+    const selectedCodes = APPLY_ORDER.filter(code => selectedLanguages.has(code));
+
+    if(!selectedCodes.length){
+      alert("Steam에 적용할 언어를 1개 이상 선택해주세요.");
       return;
     }
 
-    const payloads = {
-      KR:{source:"KR", title:String(parsed.KR.title||""), bodyHtml:String(parsed.KR.bodyHtml||"")},
-      EN:{source:"EN", title:String(parsed.EN.title||""), bodyHtml:String(parsed.EN.bodyHtml||"")},
-      JP:{source:"JP", title:String(parsed.JP.title||""), bodyHtml:String(parsed.JP.bodyHtml||"")},
-      CN:{source:"CN", title:String(parsed.CN.title||""), bodyHtml:String(parsed.CN.bodyHtml||"")},
-      TW:{source:"TW", title:String(parsed.TW.title||""), bodyHtml:String(parsed.TW.bodyHtml||"")},
-      TH:{source:"TH", title:String(parsed.TH.title||""), bodyHtml:String(parsed.TH.bodyHtml||"")},
-      RU:{source:"EN", title:String(parsed.EN.title||""), bodyHtml:String(parsed.EN.bodyHtml||"")}
+    const sourceByCode = {
+      KR:"KR", EN:"EN", JP:"JP", CN:"CN", TW:"TW", TH:"TH", RU:"EN"
     };
 
-    const empty = Object.entries(payloads).filter(([_,v]) => !v.title.trim() || !v.bodyHtml.trim()).map(([k])=>k);
-    if(empty.length){
-      alert("제목 또는 본문이 비어 있는 언어가 있어 중단합니다: " + empty.join(", "));
+    const missingSources = [...new Set(
+      selectedCodes
+        .map(code => sourceByCode[code])
+        .filter(source => !parsed[source])
+    )];
+
+    if(missingSources.length){
+      alert("선택한 언어에 필요한 DOCX 내용을 찾지 못했습니다: " + missingSources.join(", "));
       return;
     }
-    const badTitles=Object.entries(payloads).filter(([_,v])=>v.title.length>80 || /[\r\n]/.test(v.title)).map(([k,v])=>`${k}(${v.title.length}자)`);
+
+    const allPayloads = {
+      KR:{source:"KR", title:String(parsed.KR?.title||""), bodyHtml:String(parsed.KR?.bodyHtml||"")},
+      EN:{source:"EN", title:String(parsed.EN?.title||""), bodyHtml:String(parsed.EN?.bodyHtml||"")},
+      JP:{source:"JP", title:String(parsed.JP?.title||""), bodyHtml:String(parsed.JP?.bodyHtml||"")},
+      CN:{source:"CN", title:String(parsed.CN?.title||""), bodyHtml:String(parsed.CN?.bodyHtml||"")},
+      TW:{source:"TW", title:String(parsed.TW?.title||""), bodyHtml:String(parsed.TW?.bodyHtml||"")},
+      TH:{source:"TH", title:String(parsed.TH?.title||""), bodyHtml:String(parsed.TH?.bodyHtml||"")},
+      RU:{source:"EN", title:String(parsed.EN?.title||""), bodyHtml:String(parsed.EN?.bodyHtml||"")}
+    };
+
+    // 확장 프로그램은 그대로 유지하고, 웹에서 선택된 언어만 전달한다.
+    // 체크 해제한 언어는 payload 자체에 넣지 않으므로 Steam에서 건드리지 않는다.
+    const payloads = {};
+    selectedCodes.forEach(code => { payloads[code] = allPayloads[code]; });
+
+    const empty = Object.entries(payloads)
+      .filter(([_,v]) => !v.title.trim() || !v.bodyHtml.trim())
+      .map(([k])=>k);
+
+    if(empty.length){
+      alert("제목 또는 본문이 비어 있는 선택 언어가 있어 중단합니다: " + empty.join(", "));
+      return;
+    }
+
+    const badTitles=Object.entries(payloads)
+      .filter(([_,v])=>v.title.length>80 || /[\r\n]/.test(v.title))
+      .map(([k,v])=>`${k}(${v.title.length}자)`);
+
     if(badTitles.length){
       alert("Steam 제목이 80자를 초과했거나 줄바꿈이 포함되어 중단합니다: " + badTitles.join(", ") + "\n미리보기의 공지 제목이 실제 DOCX 제목과 같은지 확인해주세요.");
       return;
@@ -1400,9 +1447,10 @@ if(multiTestBtn){
     const ok = confirm("Steam 공지 적용을 진행합니다.");
     if(!ok) return;
 
-    setRunStatus("running","Steam 공지 적용 중…","KR → EN → JP → CN → TW → TH → RU 순서로 진행 중");
+    const sequenceText = selectedCodes.join(" → ");
+    setRunStatus("running","Steam 공지 적용 중…", sequenceText + " 순서로 진행 중");
     scanResult.className = "scan-result empty";
-    scanResult.textContent = "Steam 공지를 언어별로 적용 중입니다. 완료될 때까지 잠시 기다려주세요.";
+    scanResult.textContent = "선택한 언어의 Steam 공지를 적용 중입니다. 완료될 때까지 잠시 기다려주세요.";
 
     window.postMessage({
       source:"steam-publisher-web",
@@ -1411,6 +1459,7 @@ if(multiTestBtn){
     }, "*");
   });
 }
+
 
 setTimeout(requestFullDiagnostic, 600);
 
