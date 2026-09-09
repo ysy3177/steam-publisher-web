@@ -179,3 +179,15 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .preview table.steam-docx-table th{background:#59606a!important;font-weight:700!important}
 .preview table.steam-docx-table td{background:#343941!important}
 .preview .docx-content-image img{max-width:100%;height:auto;display:block;margin:0 auto}
+
+.extension-guide-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-bottom:8px;flex-wrap:wrap
+}
+.extension-guide-head strong{margin-bottom:0}
+.extension-download-btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:9px 13px;border-radius:7px;text-decoration:none;
+  background:#1a9fff;color:#fff;font-weight:700;font-size:14px
+}
+.extension-download-btn:hover{filter:brightness(1.08)}
