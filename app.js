@@ -316,53 +316,69 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam safe diagnostics =====
-function buildBookmarklet(){
-  const agentUrl = new URL("steam-agent.js", window.location.href).href + "?v=020";
-  const js = `javascript:(()=>{const u=${JSON.stringify(agentUrl)};const old=document.getElementById('steam-publisher-agent');if(old)old.remove();const s=document.createElement('script');s.id='steam-publisher-agent';s.src=u;document.documentElement.appendChild(s)})()`;
-  bookmarklet.href = js;
+// ===== Steam Chrome extension bridge (v0.3.0) =====
+let extensionConnected = false;
+
+const extensionDot = document.querySelector("#extensionDot");
+const extensionStatus = document.querySelector("#extensionStatus");
+const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
+const scanBtn = document.querySelector("#scanBtn");
+const scanResult = document.querySelector("#scanResult");
+
+function requestExtensionPing(){
+  window.postMessage({source:"steam-publisher-web", type:"EXTENSION_PING"}, "*");
 }
-buildBookmarklet();
 
-openSteamBtn.addEventListener("click",()=>{
-  const url=steamUrl.value.trim();
-  if(!url){alert("Steam 공지 편집 페이지 주소를 먼저 붙여넣어주세요.");return}
-  try{
-    const u=new URL(url);
-    const allowed = /(^|\.)steamcommunity\.com$/i.test(u.hostname) || /(^|\.)partner\.steamgames\.com$/i.test(u.hostname);
-    if(!allowed){alert("Steam Community 또는 Steamworks 편집 페이지 주소인지 확인해주세요.");return}
-    steamWindow=window.open(url,"steamPublisherEdit");
-    connectionStatus.textContent="Steam 탭 열림 · 연결 도우미 클릭 대기";
-  }catch{alert("주소 형식을 확인해주세요.")}
-});
+function setExtensionConnected(connected, label){
+  extensionConnected = connected;
+  if(extensionDot) extensionDot.classList.toggle("on", connected);
+  if(extensionStatus) extensionStatus.textContent = label || (connected ? "확장 프로그램 연결됨" : "확장 프로그램 연결 대기");
+  if(scanBtn) scanBtn.disabled = !connected;
+}
 
-window.addEventListener("message", e=>{
-  const d=e.data;
-  if(!d || d.source!=="steam-publisher-agent") return;
-  if(d.type==="ready"){
-    steamConnected=true;
-    if(e.source) steamWindow=e.source;
-    statusDot.classList.add("on");
-    connectionStatus.textContent="Steam 편집기 연결됨";
-    scanBtn.disabled=false;
+window.addEventListener("message", (e)=>{
+  if(e.source !== window) return;
+  const d = e.data;
+  if(!d || d.source !== "steam-publisher-extension") return;
+
+  if(d.type === "EXTENSION_READY" || d.type === "EXTENSION_PONG"){
+    setExtensionConnected(true, "Chrome 확장 프로그램 연결됨");
   }
-  if(d.type==="scan-result"){
-    scanResult.className="scan-result";
-    scanResult.innerHTML=`<pre>${escapeHtml(JSON.stringify(d.payload,null,2))}</pre>`;
-  }
-  if(d.type==="error"){
-    scanResult.className="scan-result";
-    scanResult.innerHTML=`<pre>${escapeHtml("오류: "+d.message)}</pre>`;
+
+  if(d.type === "SAFE_SCAN_RESULT"){
+    if(d.ok){
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml(JSON.stringify(d.result, null, 2))}</pre>`;
+    }else{
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml("진단 실패: " + (d.error || "알 수 없는 오류"))}</pre>`;
+    }
   }
 });
 
-scanBtn.addEventListener("click",()=>{
-  if(!steamWindow || steamWindow.closed){
-    alert("Steam 편집 탭이 닫혀 있습니다."); return;
-  }
-  steamWindow.postMessage({source:"steam-publisher-web",type:"safe-scan"},"*");
-  scanResult.className="scan-result empty";
-  scanResult.textContent="Steam 편집기 구조를 읽는 중...";
-});
+if(checkExtensionBtn){
+  checkExtensionBtn.addEventListener("click", ()=>{
+    setExtensionConnected(false, "확장 프로그램 응답 확인 중...");
+    requestExtensionPing();
+    setTimeout(()=>{
+      if(!extensionConnected) setExtensionConnected(false, "확장 프로그램을 찾지 못했습니다");
+    }, 1200);
+  });
+}
+
+if(scanBtn){
+  scanBtn.addEventListener("click", ()=>{
+    if(!extensionConnected){
+      alert("먼저 Chrome 확장 프로그램 연결을 확인해주세요.");
+      return;
+    }
+    scanResult.className = "scan-result empty";
+    scanResult.textContent = "열려 있는 Steam 편집 탭을 찾고 구조를 읽는 중...";
+    window.postMessage({source:"steam-publisher-web", type:"SAFE_SCAN_REQUEST"}, "*");
+  });
+}
+
+// 페이지가 열리면 자동으로 연결 여부 확인
+setTimeout(requestExtensionPing, 400);
 
 renderLangStatus();

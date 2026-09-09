@@ -89,3 +89,6 @@ button:disabled{opacity:.45;cursor:not-allowed}
   height: 1.15em;
   min-height: 1.15em;
 }
+
+/* v0.3.0 */
+.connection-card.compact { margin-top: 10px; }
