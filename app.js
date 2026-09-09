@@ -1017,6 +1017,9 @@ async function parseDocxXmlNative(arrayBuffer){
       if(isImageOnly(el)){ topBanner=el; break; }
     }
     if(topBanner){
+      // Remove only the source title/separator/banner area.
+      // Do NOT touch blank paragraphs that follow the banner:
+      // those are intentional spacing before the greeting/body.
       let n=temp.firstElementChild;
       while(n){
         const next=n.nextElementSibling;
@@ -1043,8 +1046,9 @@ async function parseDocxXmlNative(arrayBuffer){
       }
     }
 
-    // Strip only leading/trailing blank paragraphs; preserve all internal spacing exactly.
-    while(temp.firstElementChild && temp.firstElementChild.classList.contains("docx-empty-line")) temp.firstElementChild.remove();
+    // Preserve leading blank paragraphs after the removed top banner.
+    // In Word these represent the intentional gap before the greeting/body.
+    // Only trailing blank paragraphs are trimmed.
     while(temp.lastElementChild && temp.lastElementChild.classList.contains("docx-empty-line")) temp.lastElementChild.remove();
 
     parsedOut[code]={title,bodyHtml:temp.innerHTML.trim()};
