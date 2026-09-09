@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Steam Publisher - 구버전 감지 테스트",
-  "version": "0.8.0",
+  "name": "Steam Publisher Web Bridge",
+  "version": "0.8.1",
   "description": "Steam Publisher Web과 Steam 공지 편집 탭을 연결하는 브라우저 확장 프로그램입니다.",
   "permissions": [
     "tabs",
