@@ -309,7 +309,15 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.5.2) =====
+// ===== Steam Chrome extension bridge (v0.5.3) =====
+
+function refreshKrTestButton(){
+  if(krTestBtn){
+    krTestBtn.disabled = !extensionConnected;
+  }
+}
+
+
 let extensionConnected = false;
 
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
@@ -366,7 +374,7 @@ window.addEventListener("message", (e)=>{
     extensionConnected = !!(d.bridge && d.runtime);
     if(scanBtn) scanBtn.disabled = !(extensionConnected && d.steamTab);
     if(boundaryBtn) boundaryBtn.disabled = !(extensionConnected && d.steamTab);
-    if(krTestBtn) krTestBtn.disabled = !(extensionConnected && d.steamTab && parsed.KR);
+    if(krTestBtn) krTestBtn.disabled = !(extensionConnected && d.steamTab);
 
     if(scanResult){
       scanResult.className = "scan-result";
@@ -467,7 +475,7 @@ if(krTestBtn){
   krTestBtn.addEventListener("click", ()=>{
     const kr = parsed.KR;
     if(!kr){
-      alert("먼저 DOCX를 불러와서 KR 문서를 분석해주세요.");
+      alert("먼저 위에서 DOCX 파일을 불러와 분석해주세요. 분석이 끝나면 다시 이 버튼을 눌러주세요.");
       return;
     }
     const ok = confirm(
