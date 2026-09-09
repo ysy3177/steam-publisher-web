@@ -110,54 +110,72 @@ function extractTitleAndBody(html, titleHint=""){
   const box=document.createElement("div");
   box.innerHTML=html;
 
-  const candidates=[...box.children].filter(el=>normalizeText(el.textContent));
-  if(!candidates.length) return {title:"",bodyHtml:""};
+  let nodes=[...box.children];
+  if(!nodes.length) return {title:"",bodyHtml:""};
 
-  const exactHint=normalizeText(titleHint);
-  const titlePattern=/(패치\s*안내|patch\s*notice|ご案内|公告|ประกาศ|notice|update)/i;
-  let titleEl=exactHint ? candidates.find(el=>normalizeText(el.textContent)===exactHint) : null;
-  if(!titleEl){
-    const short=candidates.filter(el=>{const t=normalizeText(el.textContent);return t && t.length<=80;});
-    titleEl=short.find(el=>titlePattern.test(normalizeText(el.textContent))) || short[short.length-1] || candidates[0];
-  }
-  const title=normalizeText(exactHint || titleEl.textContent).split(/[\r\n]/)[0].slice(0,80);
+  // Cut everything from the explicit exclusion marker onward first.
+  const excludeIndex=nodes.findIndex(isExcludeMarker);
+  if(excludeIndex>=0) nodes=nodes.slice(0,excludeIndex);
 
-  const all=[...box.children];
-  const titleIndex=all.indexOf(titleEl);
-  let bodyNodes=titleIndex>=0 ? all.slice(titleIndex+1) : [];
+  // Find the preserved banner blocks independently from title detection.
+  // The first image-only block is the top banner; the last is the bottom banner.
+  const imageOnlyIndexes=[];
+  nodes.forEach((el,i)=>{ if(isImageOnlyBlock(el)) imageOnlyIndexes.push(i); });
 
-  // 1) "< 아래 내용 제외 >"가 있으면 그 문단부터 뒤는 전부 제외.
-  const excludeIndex=bodyNodes.findIndex(isExcludeMarker);
-  if(excludeIndex>=0){
-    bodyNodes=bodyNodes.slice(0,excludeIndex);
-  }
+  if(imageOnlyIndexes.length<2){
+    // Conservative fallback: still parse title, but do not throw away body text.
+    const textNodes=nodes.filter(el=>normalizeText(el.textContent));
+    const hint=normalizeText(titleHint);
+    const titleEl=(hint && textNodes.find(el=>normalizeText(el.textContent)===hint)) || textNodes[0] || null;
+    const title=normalizeText(hint || titleEl?.textContent || "").split(/[\r\n]/)[0].slice(0,80);
 
-  // 2) 제목 직후의 기존 상단 배너와 그 주변 빈 문단 제거.
-  while(bodyNodes.length && (isBlankBlock(bodyNodes[0]) || isImageOnlyBlock(bodyNodes[0]))){
-    bodyNodes.shift();
-  }
-
-  // 3) 문서 끝(또는 제외 마커 직전)의 기존 하단 배너 제거.
-  //    일반 콘텐츠 이미지는 유지하고, "끝쪽의 이미지 전용 블록"만 배너로 취급.
-  while(bodyNodes.length && isBlankBlock(bodyNodes[bodyNodes.length-1])){
-    bodyNodes.pop();
-  }
-  if(bodyNodes.length && isImageOnlyBlock(bodyNodes[bodyNodes.length-1])){
-    bodyNodes.pop();
-    while(bodyNodes.length && isBlankBlock(bodyNodes[bodyNodes.length-1])){
-      bodyNodes.pop();
+    const bodyBox=document.createElement("div");
+    let skippedTitle=false;
+    for(const el of nodes){
+      if(!skippedTitle && titleEl && el===titleEl){ skippedTitle=true; continue; }
+      bodyBox.appendChild(el.cloneNode(true));
     }
+    markVisibleBlankLines(bodyBox);
+    return {title,bodyHtml:bodyBox.innerHTML.trim()};
   }
+
+  const topBannerIndex=imageOnlyIndexes[0];
+  const bottomBannerIndex=imageOnlyIndexes[imageOnlyIndexes.length-1];
+
+  // Title is ONLY taken from the area before the top banner.
+  const beforeBanner=nodes.slice(0,topBannerIndex)
+    .filter(el=>normalizeText(el.textContent));
+
+  const hint=normalizeText(titleHint);
+  let titleEl=null;
+  if(hint){
+    titleEl=beforeBanner.find(el=>normalizeText(el.textContent)===hint) || null;
+  }
+  if(!titleEl){
+    // DOCX structure is language marker -> title -> top banner.
+    // Therefore use the first meaningful text block before the banner,
+    // never a later body paragraph.
+    titleEl=beforeBanner[0] || null;
+  }
+
+  const rawTitle=hint || normalizeText(titleEl?.textContent || "");
+  const title=normalizeText(rawTitle).split(/[\r\n]/)[0].slice(0,80);
+
+  // Body is strictly what exists BETWEEN the two preserved banner blocks.
+  // This is independent of which element was chosen as the title, preventing
+  // intro/body content from disappearing if title parsing ever misbehaves.
+  let bodyNodes=nodes.slice(topBannerIndex+1,bottomBannerIndex);
+
+  // Trim only truly empty blocks immediately touching banners.
+  while(bodyNodes.length && isBlankBlock(bodyNodes[0])) bodyNodes.shift();
+  while(bodyNodes.length && isBlankBlock(bodyNodes[bodyNodes.length-1])) bodyNodes.pop();
 
   const bodyBox=document.createElement("div");
   bodyNodes.forEach(el=>bodyBox.appendChild(el.cloneNode(true)));
-
-  // 4) Word의 빈 문단을 브라우저에서도 실제 한 줄 공백으로 보이게 처리.
   markVisibleBlankLines(bodyBox);
 
   return {title,bodyHtml:bodyBox.innerHTML.trim()};
 }
-
 function xmlText(el){
   return [...el.getElementsByTagNameNS("*","t")].map(n=>n.textContent||"").join("");
 }
@@ -174,45 +192,36 @@ async function extractTitleHints(arrayBuffer){
     if(!body) return {};
 
     const out={};
-    let current=null;
-    let beforeBanner=[];
-    let bannerSeen=false;
-
-    function flush(){
-      if(!current || !beforeBanner.length) return;
-      // The announcement title is the last non-empty text paragraph before
-      // the first image banner. This also skips KR-style internal work labels.
-      const texts=beforeBanner.map(normalizeText).filter(Boolean);
-      if(texts.length) out[current]=texts[texts.length-1];
-    }
+    let waitingForTitle=null;
 
     for(const el of [...body.children]){
-      const local=(el.localName||"").toLowerCase();
-      if(local!=="p") continue;
+      if((el.localName||"").toLowerCase()!=="p") continue;
+
       const txt=normalizeText(xmlText(el));
       const upper=txt.toUpperCase();
-      if(SECTION_CODES.includes(upper)){
-        flush(); current=upper; beforeBanner=[]; bannerSeen=false; continue;
-      }
-      if(!current || bannerSeen) continue;
 
-      const hasImage=el.getElementsByTagNameNS("*","blip").length>0 ||
-                     el.getElementsByTagNameNS("*","imagedata").length>0;
-      if(hasImage){
-        bannerSeen=true;
-        flush();
+      if(SECTION_CODES.includes(upper)){
+        waitingForTitle=upper;
         continue;
       }
-      if(txt) beforeBanner.push(txt);
+
+      if(!waitingForTitle) continue;
+
+      // In the user's DOCX format the language marker is followed directly
+      // by the announcement title. Use the FIRST non-empty text paragraph.
+      // Never choose the last paragraph before the banner.
+      if(txt){
+        out[waitingForTitle]=txt.split(/[\r\n]/)[0].trim();
+        waitingForTitle=null;
+      }
     }
-    flush();
+
     return out;
   }catch(err){
     console.warn("제목 힌트 추출 실패",err);
     return {};
   }
 }
-
 async function extractIndentHints(arrayBuffer){
   try{
     const zip=await JSZip.loadAsync(arrayBuffer);
@@ -784,7 +793,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.6.5) =====
+// ===== Steam Chrome extension bridge (v0.6.6) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
@@ -1045,7 +1054,7 @@ if(multiTestBtn){
     }
     const badTitles=Object.entries(payloads).filter(([_,v])=>v.title.length>80 || /[\r\n]/.test(v.title)).map(([k,v])=>`${k}(${v.title.length}자)`);
     if(badTitles.length){
-      alert("Steam 제목 형식이 잘못된 언어가 있어 중단합니다: " + badTitles.join(", ") + "\n본문이 제목에 섞이지 않았는지 확인해주세요.");
+      alert("Steam 제목이 80자를 초과했거나 줄바꿈이 포함되어 중단합니다: " + badTitles.join(", ") + "\n미리보기의 공지 제목이 실제 DOCX 제목과 같은지 확인해주세요.");
       return;
     }
 
