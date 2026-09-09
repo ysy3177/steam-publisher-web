@@ -316,24 +316,43 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.3.0) =====
+// ===== Steam Chrome extension bridge (v0.3.1) =====
 let extensionConnected = false;
 
-const extensionDot = document.querySelector("#extensionDot");
-const extensionStatus = document.querySelector("#extensionStatus");
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
 const scanBtn = document.querySelector("#scanBtn");
 const scanResult = document.querySelector("#scanResult");
 
-function requestExtensionPing(){
-  window.postMessage({source:"steam-publisher-web", type:"EXTENSION_PING"}, "*");
+const diag = {
+  bridge: [document.querySelector("#bridgeDot"), document.querySelector("#bridgeStatus")],
+  runtime: [document.querySelector("#runtimeDot"), document.querySelector("#runtimeStatus")],
+  steamTab: [document.querySelector("#steamTabDot"), document.querySelector("#steamTabStatus")],
+  editor: [document.querySelector("#editorDot"), document.querySelector("#editorStatus")]
+};
+
+function setDiag(key, state, text){
+  const pair = diag[key];
+  if(!pair || !pair[0] || !pair[1]) return;
+  pair[0].classList.remove("ok","bad","wait");
+  pair[0].classList.add(state);
+  pair[1].textContent = text;
 }
 
-function setExtensionConnected(connected, label){
-  extensionConnected = connected;
-  if(extensionDot) extensionDot.classList.toggle("on", connected);
-  if(extensionStatus) extensionStatus.textContent = label || (connected ? "확장 프로그램 연결됨" : "확장 프로그램 연결 대기");
-  if(scanBtn) scanBtn.disabled = !connected;
+function resetDiag(){
+  setDiag("bridge","wait","확인 중...");
+  setDiag("runtime","wait","확인 중...");
+  setDiag("steamTab","wait","확인 중...");
+  setDiag("editor","wait","확인 중...");
+  extensionConnected = false;
+  if(scanBtn) scanBtn.disabled = true;
+}
+
+function requestFullDiagnostic(){
+  resetDiag();
+  // This event is intentionally visible to the content script even if the
+  // page's own postMessage listener is affected by page code.
+  document.documentElement.setAttribute("data-spw-diagnostic-request", String(Date.now()));
+  window.postMessage({source:"steam-publisher-web", type:"FULL_DIAGNOSTIC"}, "*");
 }
 
 window.addEventListener("message", (e)=>{
@@ -341,8 +360,30 @@ window.addEventListener("message", (e)=>{
   const d = e.data;
   if(!d || d.source !== "steam-publisher-extension") return;
 
-  if(d.type === "EXTENSION_READY" || d.type === "EXTENSION_PONG"){
-    setExtensionConnected(true, "Chrome 확장 프로그램 연결됨");
+  if(d.type === "EXTENSION_READY"){
+    setDiag("bridge","ok","웹페이지와 연결됨");
+  }
+
+  if(d.type === "FULL_DIAGNOSTIC_RESULT"){
+    setDiag("bridge", d.bridge ? "ok" : "bad", d.bridge ? "웹페이지와 연결됨" : "웹페이지 연결 실패");
+    setDiag("runtime", d.runtime ? "ok" : "bad", d.runtime ? `확장 프로그램 실행 중 (v${d.version || "?"})` : "확장 프로그램 응답 없음");
+    setDiag("steamTab", d.steamTab ? "ok" : "bad", d.steamTab ? `Steam 탭 발견: ${d.tabTitle || ""}` : "열려 있는 Steam 탭 없음");
+    setDiag("editor", d.editor ? "ok" : "bad", d.editor ? "Steam 공지 편집 화면 확인됨" : (d.steamTab ? "Steam 탭은 있으나 편집 화면으로 확인되지 않음" : "Steam 탭 확인 필요"));
+
+    extensionConnected = !!(d.bridge && d.runtime);
+    if(scanBtn) scanBtn.disabled = !(extensionConnected && d.steamTab);
+
+    if(scanResult){
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+        version: d.version || "",
+        steamTabFound: !!d.steamTab,
+        editorDetected: !!d.editor,
+        tabTitle: d.tabTitle || "",
+        tabUrl: d.tabUrl || "",
+        note: "이 진단은 Steam 내용을 수정하지 않습니다."
+      }, null, 2))}</pre>`;
+    }
   }
 
   if(d.type === "SAFE_SCAN_RESULT"){
@@ -358,27 +399,40 @@ window.addEventListener("message", (e)=>{
 
 if(checkExtensionBtn){
   checkExtensionBtn.addEventListener("click", ()=>{
-    setExtensionConnected(false, "확장 프로그램 응답 확인 중...");
-    requestExtensionPing();
+    requestFullDiagnostic();
     setTimeout(()=>{
-      if(!extensionConnected) setExtensionConnected(false, "확장 프로그램을 찾지 못했습니다");
-    }, 1200);
+      const runtimeText = diag.runtime?.[1]?.textContent || "";
+      if(runtimeText === "확인 중..."){
+        setDiag("bridge","bad","확장 프로그램의 사이트 연결 스크립트가 응답하지 않음");
+        setDiag("runtime","bad","확장 프로그램 응답 없음");
+        setDiag("steamTab","bad","확인할 수 없음");
+        setDiag("editor","bad","확인할 수 없음");
+        if(scanResult){
+          scanResult.className = "scan-result";
+          scanResult.innerHTML = `<pre>${escapeHtml(
+            "연결 스크립트가 이 페이지에서 실행되지 않았습니다.\n" +
+            "Chrome 확장 프로그램 상세정보에서 '사이트 액세스'가 허용되어 있는지 확인해주세요.\n" +
+            "현재 진단은 Steam 내용을 수정하지 않습니다."
+          )}</pre>`;
+        }
+      }
+    }, 1800);
   });
 }
 
 if(scanBtn){
   scanBtn.addEventListener("click", ()=>{
     if(!extensionConnected){
-      alert("먼저 Chrome 확장 프로그램 연결을 확인해주세요.");
+      alert("먼저 연결 상태 진단을 실행해주세요.");
       return;
     }
     scanResult.className = "scan-result empty";
-    scanResult.textContent = "열려 있는 Steam 편집 탭을 찾고 구조를 읽는 중...";
+    scanResult.textContent = "열려 있는 Steam 탭의 구조를 읽는 중...";
+    document.documentElement.setAttribute("data-spw-safe-scan-request", String(Date.now()));
     window.postMessage({source:"steam-publisher-web", type:"SAFE_SCAN_REQUEST"}, "*");
   });
 }
 
-// 페이지가 열리면 자동으로 연결 여부 확인
-setTimeout(requestExtensionPing, 400);
+setTimeout(requestFullDiagnostic, 600);
 
 renderLangStatus();

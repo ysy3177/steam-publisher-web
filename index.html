@@ -15,7 +15,7 @@
         <h1>Steam Publisher Web</h1>
         <p>DOCX 언어 분리 + Steam 편집기 안전 진단 도구</p>
       </div>
-      <span class="version">v0.3.0 · EXTENSION TEST</span>
+      <span class="version">v0.3.1 · CONNECTION DIAGNOSTIC</span>
     </section>
 
     <section class="panel">
@@ -62,12 +62,14 @@
         <div class="steam-step">
           <h3>A. Chrome 확장 프로그램 연결</h3>
           <p>ZIP 안의 <b>extension</b> 폴더를 Chrome 확장 프로그램에 한 번만 등록하면 됩니다.</p>
-          <div class="connection-card compact">
-            <div>
-              <span class="status-dot" id="extensionDot"></span>
-              <strong id="extensionStatus">확장 프로그램 연결 대기</strong>
+          <div class="connection-card diagnostic-card">
+            <div class="diagnostic-list">
+              <div><span class="diag-dot" id="bridgeDot"></span><b>① 웹페이지 연결</b><span id="bridgeStatus">확인 전</span></div>
+              <div><span class="diag-dot" id="runtimeDot"></span><b>② 확장 프로그램 실행</b><span id="runtimeStatus">확인 전</span></div>
+              <div><span class="diag-dot" id="steamTabDot"></span><b>③ Steam 탭 발견</b><span id="steamTabStatus">확인 전</span></div>
+              <div><span class="diag-dot" id="editorDot"></span><b>④ 편집 화면 확인</b><span id="editorStatus">확인 전</span></div>
             </div>
-            <button id="checkExtensionBtn">연결 확인</button>
+            <button id="checkExtensionBtn">연결 상태 진단</button>
           </div>
           <p class="mini">확장 프로그램은 Steam 탭의 DOM만 읽거나 수정합니다. Windows 마우스/키보드 제어는 사용하지 않습니다.</p>
         </div>

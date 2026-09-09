@@ -92,3 +92,13 @@ button:disabled{opacity:.45;cursor:not-allowed}
 
 /* v0.3.0 */
 .connection-card.compact { margin-top: 10px; }
+
+/* v0.3.1 connection diagnostics */
+.diagnostic-card{display:block!important}
+.diagnostic-list{display:grid;gap:8px;margin-bottom:12px}
+.diagnostic-list>div{display:grid;grid-template-columns:14px minmax(120px,auto) 1fr;align-items:center;gap:8px}
+.diag-dot{width:10px;height:10px;border-radius:50%;background:#777;display:inline-block}
+.diag-dot.ok{background:#4caf50}
+.diag-dot.bad{background:#e45b5b}
+.diag-dot.wait{background:#d6a63a}
+.diagnostic-list span:last-child{font-size:13px;opacity:.9}
