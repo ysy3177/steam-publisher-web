@@ -88,3 +88,10 @@ Steam 공지를 복제한 뒤 기존 상단 배너와 하단 배너는 유지합
 - `배너 경계 확인` 버튼 추가
 - Steam 페이지에는 임시 초록 테두리/라벨만 표시하며 30초 후 자동 제거
 - 내용 변경, 저장, 게시 기능 없음
+
+## v0.4.1
+- Steam 탭에 content script가 없을 때 자동으로 `steam-content.js`를 주입하도록 변경
+- 확장 프로그램 업데이트 후 Steam 탭을 수동 새로고침하지 않아도 안전 진단/배너 경계 확인 가능
+- `Could not establish connection. Receiving end does not exist.` 오류 대응
+- 중복 주입 방지 가드 추가
+- 여전히 내용 변경/저장/게시 기능 없음
