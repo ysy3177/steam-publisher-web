@@ -309,11 +309,12 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.4.1) =====
+// ===== Steam Chrome extension bridge (v0.5.0) =====
 let extensionConnected = false;
 
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
 const boundaryBtn = document.querySelector("#boundaryBtn");
+const krTestBtn = document.querySelector("#krTestBtn");
 
 const diag = {
   bridge: [document.querySelector("#bridgeDot"), document.querySelector("#bridgeStatus")],
@@ -365,6 +366,7 @@ window.addEventListener("message", (e)=>{
     extensionConnected = !!(d.bridge && d.runtime);
     if(scanBtn) scanBtn.disabled = !(extensionConnected && d.steamTab);
     if(boundaryBtn) boundaryBtn.disabled = !(extensionConnected && d.steamTab);
+    if(krTestBtn) krTestBtn.disabled = !(extensionConnected && d.steamTab && parsed.KR);
 
     if(scanResult){
       scanResult.className = "scan-result";
@@ -376,6 +378,16 @@ window.addEventListener("message", (e)=>{
         tabUrl: d.tabUrl || "",
         note: "이 진단은 Steam 내용을 수정하지 않습니다."
       }, null, 2))}</pre>`;
+    }
+  }
+
+  if(d.type === "KR_UNSAVED_TEST_RESULT"){
+    if(d.ok){
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml(JSON.stringify(d.result, null, 2))}</pre>`;
+    }else{
+      scanResult.className = "scan-result";
+      scanResult.innerHTML = `<pre>${escapeHtml("한국어 미저장 테스트 실패: " + (d.error || "알 수 없는 오류"))}</pre>`;
     }
   }
 
@@ -447,6 +459,37 @@ if(boundaryBtn){
     scanResult.textContent = "Steam 편집기에서 제목·본문·상단/하단 배너 경계를 표시하는 중...";
     document.documentElement.setAttribute("data-spw-boundary-request", String(Date.now()));
     window.postMessage({source:"steam-publisher-web", type:"BOUNDARY_REQUEST"}, "*");
+  });
+}
+
+
+if(krTestBtn){
+  krTestBtn.addEventListener("click", ()=>{
+    const kr = parsed.KR;
+    if(!kr){
+      alert("먼저 DOCX를 불러와서 KR 문서를 분석해주세요.");
+      return;
+    }
+    const ok = confirm(
+      "테스트용 복제 공지의 한국어 화면에만 임시로 내용을 넣습니다.\n\n" +
+      "• 저장 버튼은 누르지 않습니다.\n" +
+      "• 상단/하단 배너는 유지합니다.\n" +
+      "• 문제가 있으면 Steam 탭을 새로고침하면 저장된 내용으로 돌아갑니다.\n\n" +
+      "계속할까요?"
+    );
+    if(!ok) return;
+
+    scanResult.className = "scan-result empty";
+    scanResult.textContent = "한국어 제목과 두 배너 사이 본문을 Steam 화면에 임시 적용하는 중...";
+
+    window.postMessage({
+      source:"steam-publisher-web",
+      type:"KR_UNSAVED_TEST_REQUEST",
+      payload:{
+        title: kr.title || "",
+        bodyHtml: kr.body || kr.html || ""
+      }
+    }, "*");
   });
 }
 
