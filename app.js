@@ -12,8 +12,6 @@ const SECTION_CODES = ["KR","JP","EN","TW","CN","TH"];
 
 let selectedFile = null;
 let parsed = {};
-let steamWindow = null;
-let steamConnected = false;
 
 const $ = s => document.querySelector(s);
 const fileInput = $("#fileInput");
@@ -24,13 +22,8 @@ const langGrid = $("#langGrid");
 const tabs = $("#tabs");
 const detail = $("#detail");
 const dropZone = $("#dropZone");
-const bookmarklet = $("#bookmarklet");
-const steamUrl = $("#steamUrl");
-const openSteamBtn = $("#openSteamBtn");
 const scanBtn = $("#scanBtn");
 const scanResult = $("#scanResult");
-const statusDot = $("#statusDot");
-const connectionStatus = $("#connectionStatus");
 
 function resetUI(){
   selectedFile = null; parsed = {};
@@ -316,12 +309,10 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.3.1) =====
+// ===== Steam Chrome extension bridge (v0.3.2) =====
 let extensionConnected = false;
 
 const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
-const scanBtn = document.querySelector("#scanBtn");
-const scanResult = document.querySelector("#scanResult");
 
 const diag = {
   bridge: [document.querySelector("#bridgeDot"), document.querySelector("#bridgeStatus")],

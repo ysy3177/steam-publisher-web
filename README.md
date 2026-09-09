@@ -71,3 +71,9 @@ Steam 공지를 복제한 뒤 기존 상단 배너와 하단 배너는 유지합
 - Render 호스트 매칭 범위를 보강
 - window.postMessage + DOM attribute observer의 이중 연결 경로 사용
 - 여전히 Steam 내용 변경/저장/게시 기능 없음 (읽기 전용)
+
+## v0.3.2
+- v0.3.1에서 `scanBtn` / `scanResult`가 app.js 안에 중복 선언되어 전체 JavaScript가 시작되지 않던 오류 수정
+- 사용하지 않는 구형 북마크 연결 변수 제거
+- 연결 진단 버튼 이벤트가 정상 등록되도록 수정
+- Steam 변경/저장/게시 기능은 여전히 없음 (읽기 전용)
