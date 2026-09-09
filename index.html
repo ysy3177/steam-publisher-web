@@ -13,9 +13,9 @@
     <section class="hero">
       <div>
         <h1>Steam Publisher Web</h1>
-        <p>DOCX 언어 분리 + Steam 편집기 안전 진단 도구</p>
+        <p>DOCX 다국어 공지를 Steam 편집기에 적용합니다.</p>
       </div>
-      <span class="version">v0.6.6 · TITLE/BODY FIX</span>
+      <span class="version">v0.7.0 · XML PARSER</span>
     </section>
 
     <section class="panel">
@@ -44,62 +44,55 @@
     </section>
 
     
+    
     <section class="panel steam-panel">
       <div class="section-title-row">
         <div>
-          <h2>3. Steam 편집기 안전 진단</h2>
-          <p class="hint">북마크 도우미 대신 Chrome 확장 프로그램으로 Steam 탭과 연결합니다. 마우스/키보드는 점유하지 않습니다.</p>
-        </div>
-        <span class="safe-badge">읽기 전용 진단</span>
-      </div>
-
-      <div class="warning">
-        <strong>배너 보호 규칙</strong>
-        <span>상단 배너와 하단 배너는 그대로 유지하고, 두 배너 사이 본문만 교체하도록 설계합니다.</span>
-      </div>
-
-      <div class="steam-grid">
-        <div class="steam-step">
-          <h3>A. Chrome 확장 프로그램 연결</h3>
-          <p>ZIP 안의 <b>extension</b> 폴더를 Chrome 확장 프로그램에 한 번만 등록하면 됩니다.</p>
-          <div class="connection-card diagnostic-card">
-            <div class="diagnostic-list">
-              <div><span class="diag-dot" id="bridgeDot"></span><b>① 웹페이지 연결</b><span id="bridgeStatus">확인 전</span></div>
-              <div><span class="diag-dot" id="runtimeDot"></span><b>② 확장 프로그램 실행</b><span id="runtimeStatus">확인 전</span></div>
-              <div><span class="diag-dot" id="steamTabDot"></span><b>③ Steam 탭 발견</b><span id="steamTabStatus">확인 전</span></div>
-              <div><span class="diag-dot" id="editorDot"></span><b>④ 편집 화면 확인</b><span id="editorStatus">확인 전</span></div>
-            </div>
-            <button id="checkExtensionBtn">연결 상태 진단</button>
-          </div>
-          <p class="mini">확장 프로그램은 Steam 탭의 DOM만 읽거나 수정합니다. Windows 마우스/키보드 제어는 사용하지 않습니다.</p>
-        </div>
-
-        <div class="steam-step">
-          <h3>B. 테스트용 Steam 복제 공지 열기</h3>
-          <p>복제해 둔 테스트 공지의 <b>수정</b> 화면을 Chrome 탭으로 열어 둡니다. 게시 중인 원본 공지는 사용하지 않습니다.</p>
-          <div class="actions">
-            <button id="scanBtn" disabled>안전 진단 실행</button>
-            <button id="boundaryBtn" disabled>배너 경계 확인</button>
-            <button id="krTestBtn" disabled>한국어 미저장 교체 테스트</button>
-            <button id="multiTestBtn" disabled>7개 언어 미저장 순환 테스트</button>
-          </div>
-          <p class="mini">안전 진단/경계 확인은 읽기 전용입니다. <b>한국어 미저장 교체 테스트</b>는 KR만, <b>7개 언어 미저장 순환 테스트</b>는 KR→EN→JP→CN→TW→TH→RU 순서로 언어를 전환하며 화면에만 적용합니다. 저장/게시 버튼은 누르지 않습니다.</p>
-          <div id="runStatus" class="run-status idle">
-            <strong>순환 테스트 상태: 대기</strong>
-            <span>아직 실행하지 않았습니다.</span>
-          </div>
+          <h2>3. Steam 연결</h2>
+          <p class="hint">최초 1회 <b>extension</b> 폴더를 Chrome 확장 프로그램에 등록 필요합니다.</p>
         </div>
       </div>
 
-      <div id="scanResult" class="scan-result empty">
-        확장 프로그램이 연결되면 Steam 편집기 진단 결과가 여기에 표시됩니다.
+      <div class="extension-guide">
+        <strong>확장 프로그램 등록 방법</strong>
+        <ol>
+          <li>다운로드한 ZIP 파일의 압축을 풉니다.</li>
+          <li>Chrome 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
+          <li>오른쪽 위 <b>개발자 모드</b>를 켭니다.</li>
+          <li><b>압축해제된 확장 프로그램을 로드</b>를 누릅니다.</li>
+          <li>압축을 푼 폴더 안의 <b>extension</b> 폴더를 선택합니다.</li>
+        </ol>
+      </div>
+
+      <div class="connection-card diagnostic-card">
+        <div class="diagnostic-list">
+          <div><span class="diag-dot" id="bridgeDot"></span><b>① 웹페이지 연결</b><span id="bridgeStatus">확인 전</span></div>
+          <div><span class="diag-dot" id="runtimeDot"></span><b>② 확장 프로그램 실행</b><span id="runtimeStatus">확인 전</span></div>
+          <div><span class="diag-dot" id="steamTabDot"></span><b>③ Steam 탭 발견</b><span id="steamTabStatus">확인 전</span></div>
+          <div><span class="diag-dot" id="editorDot"></span><b>④ 편집 화면 확인</b><span id="editorStatus">확인 전</span></div>
+        </div>
+        <button id="checkExtensionBtn">연결 상태 확인</button>
+      </div>
+
+      <div class="actions steam-actions">
+        <button id="multiTestBtn" disabled>Steam 공지 적용</button>
+      </div>
+
+      <div id="runStatus" class="run-status idle">
+        <strong>상태: 대기</strong>
+        <span>DOCX 분석과 Steam 연결이 완료되면 공지를 적용할 수 있습니다.</span>
+      </div>
+
+      <!-- 기존 JS 호환용: 사용자 화면에는 노출하지 않음 -->
+      <div class="legacy-hidden">
+        <button id="scanBtn" disabled></button>
+        <button id="boundaryBtn" disabled></button>
+        <button id="krTestBtn" disabled></button>
+        <div id="scanResult"></div>
       </div>
     </section>
-<section class="panel">
-      <h2>다음 단계</h2>
-      <p>진단 결과로 Steam 편집기의 실제 구조를 확인한 뒤, <b>복제 → 전체 언어 선택 → 제목 교체 → 상·하단 배너 사이 본문만 교체 → 저장</b> 자동화를 연결합니다.</p>
-    </section>
+
   </main>
-  <script src="app.js?v=066"></script>
+  <script src="app.js?v=070"></script>
 </body>
 </html>

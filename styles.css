@@ -150,3 +150,32 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .preview table.steam-docx-table tr:first-child{background:#565d67!important}
 .preview table.steam-docx-table th,.preview table.steam-docx-table td{border:1px solid #727982!important;padding:6px 8px!important;vertical-align:middle!important;text-align:left!important;color:#eef2f6!important;background:transparent!important}
 .preview table.steam-docx-table th{font-weight:700!important}
+
+/* v0.7.0 simplified Steam connection UI */
+.extension-guide{
+  margin:14px 0 16px;padding:14px 16px;border:1px solid var(--line);
+  border-radius:8px;background:#151d26
+}
+.extension-guide strong{display:block;margin-bottom:8px}
+.extension-guide ol{margin:0;padding-left:22px;line-height:1.75}
+.extension-guide code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.steam-actions{margin-top:14px}
+.steam-actions button{font-size:15px;font-weight:700}
+.legacy-hidden{display:none!important}
+
+.preview hr.docx-separator{
+  display:block;width:100%;border:0!important;border-top:1px solid #9ba2aa!important;
+  margin:14px 0 18px!important;height:0!important
+}
+.preview table.steam-docx-table{
+  width:100%!important;border-collapse:collapse!important;margin:12px 0 16px!important;
+  color:#f3f5f7!important;background:#343941!important
+}
+.preview table.steam-docx-table th,
+.preview table.steam-docx-table td{
+  border:1px solid #69717b!important;padding:6px 8px!important;text-align:left!important;
+  vertical-align:middle!important;color:#f3f5f7!important
+}
+.preview table.steam-docx-table th{background:#59606a!important;font-weight:700!important}
+.preview table.steam-docx-table td{background:#343941!important}
+.preview .docx-content-image img{max-width:100%;height:auto;display:block;margin:0 auto}

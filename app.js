@@ -731,43 +731,299 @@ function normalizeTablesForSteam(bodyHtml){
   return box.innerHTML;
 }
 
+
+function xmlAttr(el,name){
+  if(!el) return "";
+  return el.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships",name)
+    || el.getAttribute("r:"+name) || el.getAttribute(name) || "";
+}
+function wordAttr(el,name){
+  if(!el) return "";
+  return el.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main",name)
+    || el.getAttribute("w:"+name) || el.getAttribute(name) || "";
+}
+function htmlEscapeText(v){
+  return String(v??"").replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+}
+function preserveRunSpaces(text){
+  text=String(text??"").replace(/\t/g,"\u00a0\u00a0\u00a0\u00a0");
+  text=text.replace(/^ +/,m=>"\u00a0".repeat(m.length));
+  text=text.replace(/ +$/,m=>"\u00a0".repeat(m.length));
+  text=text.replace(/ {2,}/g,m=>"\u00a0".repeat(m.length-1)+" ");
+  return htmlEscapeText(text);
+}
+function runWrappedHtml(run,text){
+  let out=preserveRunSpaces(text);
+  const rPr=[...run.children].find(x=>(x.localName||"").toLowerCase()==="rpr");
+  if(rPr){
+    const has=n=>[...rPr.children].some(x=>(x.localName||"").toLowerCase()===n);
+    if(has("b")) out="<strong>"+out+"</strong>";
+    if(has("i")) out="<em>"+out+"</em>";
+    if(has("u")) out="<u>"+out+"</u>";
+  }
+  return out;
+}
+function mimeFromPath(path){
+  const ext=(path.split(".").pop()||"").toLowerCase();
+  return ({png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",webp:"image/webp",bmp:"image/bmp"}[ext]||"application/octet-stream");
+}
+
+async function parseDocxXmlNative(arrayBuffer){
+  const zip=await JSZip.loadAsync(arrayBuffer);
+  const raw=await zip.file("word/document.xml").async("string");
+  const xml=new DOMParser().parseFromString(raw,"application/xml");
+  const body=xml.getElementsByTagNameNS("*","body")[0];
+  if(!body) throw new Error("DOCX 본문 구조를 찾지 못했습니다.");
+
+  const relMap={};
+  const relFile=zip.file("word/_rels/document.xml.rels");
+  if(relFile){
+    const relRaw=await relFile.async("string");
+    const relXml=new DOMParser().parseFromString(relRaw,"application/xml");
+    for(const rel of [...relXml.getElementsByTagName("*")]){
+      if((rel.localName||"").toLowerCase()!=="relationship") continue;
+      const id=rel.getAttribute("Id"), target=rel.getAttribute("Target");
+      if(id&&target) relMap[id]=target;
+    }
+  }
+
+  const imageCache={};
+  async function imageData(rid){
+    if(!rid) return "";
+    if(imageCache[rid]) return imageCache[rid];
+    const target=relMap[rid];
+    if(!target) return "";
+    const normalized=("word/"+target).replace(/word\/\.\//g,"");
+    const f=zip.file(normalized) || zip.file(target.replace(/^\.\//,"word/"));
+    if(!f) return "";
+    const b64=await f.async("base64");
+    return imageCache[rid]=`data:${mimeFromPath(target)};base64,${b64}`;
+  }
+
+  function paragraphPlainText(p){
+    return [...p.getElementsByTagNameNS("*","t")].map(n=>n.textContent||"").join("");
+  }
+  function isLangMarker(p){
+    const t=paragraphPlainText(p).trim().toUpperCase();
+    return SECTION_CODES.includes(t) ? t : null;
+  }
+  function isExcludeText(t){
+    return /[<＜]\s*아래\s*내용\s*제외\s*[>＞]/i.test(String(t||""));
+  }
+  function paragraphIndentStyle(p){
+    const pPr=[...p.children].find(x=>(x.localName||"").toLowerCase()==="ppr");
+    if(!pPr) return "";
+    const ind=[...pPr.children].find(x=>(x.localName||"").toLowerCase()==="ind");
+    if(!ind) return "";
+    const left=Number(wordAttr(ind,"left")||wordAttr(ind,"start")||0);
+    if(!left) return "";
+    const px=Math.max(0,Math.min(180,Math.round(left/15)));
+    return px?` style="padding-left:${px}px"`:"";
+  }
+
+  async function pictToken(node){
+    const im=node.getElementsByTagNameNS("*","imagedata")[0];
+    if(im){
+      const rid=xmlAttr(im,"id");
+      const src=await imageData(rid);
+      if(src) return {type:"image",src};
+    }
+    // VML shape without image data = horizontal line / separator.
+    return {type:"line"};
+  }
+  async function drawingToken(node){
+    const blip=node.getElementsByTagNameNS("*","blip")[0];
+    const rid=blip ? xmlAttr(blip,"embed") : "";
+    const src=await imageData(rid);
+    return src ? {type:"image",src} : null;
+  }
+
+  async function inlineTokens(parent){
+    const out=[];
+    async function walk(node,runCtx=null){
+      for(const ch of [...node.children]){
+        const name=(ch.localName||"").toLowerCase();
+        if(name==="r"){
+          await walk(ch,ch);
+        }else if(name==="t"){
+          out.push({type:"text",html:runWrappedHtml(runCtx||node,ch.textContent||""),raw:ch.textContent||""});
+        }else if(name==="tab"){
+          out.push({type:"text",html:"&nbsp;&nbsp;&nbsp;&nbsp;",raw:"\t"});
+        }else if(name==="br"){
+          out.push({type:"br"});
+        }else if(name==="pict"){
+          out.push(await pictToken(ch));
+        }else if(name==="drawing"){
+          const tok=await drawingToken(ch); if(tok) out.push(tok);
+        }else{
+          await walk(ch,runCtx);
+        }
+      }
+    }
+    await walk(parent,null);
+    return out.filter(Boolean);
+  }
+
+  function splitTokensToHtml(tokens,indentStyle=""){
+    let html="",buf="";
+    const flush=()=>{
+      if(buf!==""){ html+=`<p${indentStyle}>${buf}</p>`; buf=""; }
+    };
+    for(const tok of tokens){
+      if(tok.type==="text") buf+=tok.html;
+      else if(tok.type==="br") buf+="<br>";
+      else if(tok.type==="line"){
+        flush(); html+='<hr class="docx-separator">';
+      }else if(tok.type==="image"){
+        flush(); html+=`<p class="docx-content-image"><img src="${tok.src}" alt=""></p>`;
+      }
+    }
+    flush();
+    return html;
+  }
+
+  async function renderParagraph(p){
+    const raw=paragraphPlainText(p);
+    const tokens=await inlineTokens(p);
+    const meaningful=tokens.some(t=>t.type==="image"||t.type==="line"||(t.type==="text"&&String(t.raw).trim()));
+    if(!meaningful){
+      return '<p class="docx-empty-line"><br></p>';
+    }
+    return splitTokensToHtml(tokens,paragraphIndentStyle(p));
+  }
+
+  async function renderTable(tbl){
+    const rows=[...tbl.children].filter(x=>(x.localName||"").toLowerCase()==="tr");
+    let html='<table class="steam-docx-table"><tbody>';
+    for(let ri=0;ri<rows.length;ri++){
+      html+="<tr>";
+      const cells=[...rows[ri].children].filter(x=>(x.localName||"").toLowerCase()==="tc");
+      for(const cell of cells){
+        const tag=ri===0?"th":"td";
+        let colspan="";
+        const tcPr=[...cell.children].find(x=>(x.localName||"").toLowerCase()==="tcpr");
+        if(tcPr){
+          const gs=[...tcPr.children].find(x=>(x.localName||"").toLowerCase()==="gridspan");
+          const span=gs?Number(wordAttr(gs,"val")||0):0;
+          if(span>1) colspan=` colspan="${span}"`;
+        }
+        let inner="";
+        for(const child of [...cell.children]){
+          const n=(child.localName||"").toLowerCase();
+          if(n==="p") inner+=await renderParagraph(child);
+        }
+        // unwrap paragraph wrappers inside cells for cleaner Steam tables
+        const tmp=document.createElement("div"); tmp.innerHTML=inner;
+        const flattened=[...tmp.children].map(el=>{
+          if(el.tagName==="P" && !el.classList.contains("docx-content-image")) return el.innerHTML;
+          return el.outerHTML;
+        }).join("");
+        html+=`<${tag}${colspan}>${flattened}</${tag}>`;
+      }
+      html+="</tr>";
+    }
+    html+="</tbody></table>";
+    return html;
+  }
+
+  const sections={};
+  let current=null;
+  for(const block of [...body.children]){
+    const name=(block.localName||"").toLowerCase();
+    if(name==="p"){
+      const marker=isLangMarker(block);
+      if(marker){ current=marker; sections[current]=[]; continue; }
+    }
+    if(current) sections[current].push(block);
+  }
+
+  const parsedOut={};
+  for(const code of SECTION_CODES){
+    const blocks=sections[code];
+    if(!blocks) continue;
+
+    let title="";
+    let titleFound=false;
+    let bodyParts=[];
+    let stop=false;
+
+    for(let bi=0;bi<blocks.length && !stop;bi++){
+      const block=blocks[bi];
+      const name=(block.localName||"").toLowerCase();
+
+      if(name==="p"){
+        const raw=paragraphPlainText(block);
+        if(isExcludeText(raw)){ stop=true; break; }
+        const tokens=await inlineTokens(block);
+
+        if(!titleFound){
+          const firstTextIndex=tokens.findIndex(t=>t.type==="text"&&String(t.raw).trim());
+          if(firstTextIndex<0){
+            // Skip blanks before title; keep structural items only after title exists.
+            continue;
+          }
+
+          // Title is the initial textual segment until first structural token.
+          let titleRaw="";
+          let cut=tokens.length;
+          for(let i=firstTextIndex;i<tokens.length;i++){
+            const t=tokens[i];
+            if(t.type==="text") titleRaw+=t.raw;
+            else { cut=i; break; }
+          }
+          title=String(titleRaw).trim().replace(/\s+/g," ");
+          titleFound=true;
+
+          // If this same paragraph also contains line/body/image (CN case),
+          // keep everything after the title segment as body.
+          const rest=tokens.slice(cut);
+          if(rest.length){
+            bodyParts.push(splitTokensToHtml(rest,paragraphIndentStyle(block)));
+          }
+          continue;
+        }
+
+        bodyParts.push(await renderParagraph(block));
+      }else if(name==="tbl"){
+        if(titleFound) bodyParts.push(await renderTable(block));
+      }
+    }
+
+    // Remove existing Steam banner images only when they are image-only blocks
+    // at the absolute start/end of the DOCX body. Article/content images remain.
+    const temp=document.createElement("div");
+    temp.innerHTML=bodyParts.join("");
+    const kids=[...temp.children];
+    const isImageOnly=el=>el.tagName==="P" && !!el.querySelector("img") && !(el.textContent||"").trim();
+    if(kids.length && isImageOnly(kids[0])) kids[0].remove();
+    const kids2=[...temp.children];
+    if(kids2.length && isImageOnly(kids2[kids2.length-1])) kids2[kids2.length-1].remove();
+
+    // Strip only leading/trailing blank paragraphs; preserve all internal spacing exactly.
+    while(temp.firstElementChild && temp.firstElementChild.classList.contains("docx-empty-line")) temp.firstElementChild.remove();
+    while(temp.lastElementChild && temp.lastElementChild.classList.contains("docx-empty-line")) temp.lastElementChild.remove();
+
+    parsedOut[code]={title,bodyHtml:temp.innerHTML.trim()};
+  }
+
+  return parsedOut;
+}
+
 async function analyze(){
   if(!selectedFile)return;
   analyzeBtn.disabled=true; analyzeBtn.textContent="분석 중...";
   try{
     const arrayBuffer=await selectedFile.arrayBuffer();
-    const blankHints=await extractBlankLineHints(arrayBuffer.slice(0));
-    const titleHints=await extractTitleHints(arrayBuffer.slice(0));
-    const indentHints=await extractIndentHints(arrayBuffer.slice(0));
-    const paragraphHints=await extractParagraphHints(arrayBuffer.slice(0));
-    const lineBreakHints=await extractManualLineBreakHints(arrayBuffer.slice(0));
-    const separatorHints=await extractSeparatorHints(arrayBuffer.slice(0));
-    const result=await mammoth.convertToHtml({arrayBuffer},{
-      convertImage:mammoth.images.imgElement(async image=>{
-        const buffer=await image.read("base64");
-        return {src:`data:${image.contentType};base64,${buffer}`};
-      })
-    });
-    const temp=document.createElement("div"); temp.innerHTML=result.value;
-    const sections=splitByLanguage(temp); parsed={};
-    for(const code of SECTION_CODES){
-      if(sections[code]){
-        const data=extractTitleAndBody(sections[code], titleHints[code]||"");
-        data.bodyHtml=repairManualLineBreaks(data.bodyHtml, lineBreakHints[code]||[], data.title);
-        data.bodyHtml=repairMergedParagraphs(data.bodyHtml, paragraphHints[code]||[], data.title);
-        data.bodyHtml=insertRecoveredBlankLines(data.bodyHtml, blankHints[code]||[], data.title);
-        data.bodyHtml=insertRecoveredSeparators(data.bodyHtml, separatorHints[code]||[], data.title);
-        data.bodyHtml=normalizeTablesForSteam(data.bodyHtml);
-        // Empty tables may normalize into HRs, so normalize separator spacing once more.
-        data.bodyHtml=insertRecoveredSeparators(data.bodyHtml, [], data.title);
-        data.bodyHtml=applyIndentHints(data.bodyHtml, indentHints[code]||[]);
-        data.bodyHtml=preserveInlineWhitespace(data.bodyHtml);
-        parsed[code]=data;
-      }
-    }
-    renderLangStatus(); renderTabs();
-  }catch(err){console.error(err);alert("DOCX 분석 중 오류가 발생했습니다.\n"+err.message)}
-  finally{analyzeBtn.disabled=false;analyzeBtn.textContent="문서 분석"}
+    parsed=await parseDocxXmlNative(arrayBuffer);
+    renderLangStatus();
+    renderTabs();
+  }catch(err){
+    console.error(err);
+    alert("DOCX 분석 중 오류가 발생했습니다.\n\n"+(err?.message||String(err)));
+  }finally{
+    analyzeBtn.disabled=false;
+    analyzeBtn.textContent="문서 분석";
+  }
 }
 analyzeBtn.addEventListener("click", analyze);
 
@@ -793,7 +1049,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.6.6) =====
+// ===== Steam Chrome extension bridge (v0.7.0) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
@@ -887,13 +1143,12 @@ window.addEventListener("message", (e)=>{
     if(d.ok){
       const test=d.result?.test || d.result || {};
       const count=Array.isArray(test.results)?test.results.length:0;
-      setRunStatus("success","✓ 7개 언어 미저장 테스트 완료",`${count}/7 언어 적용 완료 · 저장/게시하지 않음`);
-      scanResult.className = "scan-result";
-      scanResult.innerHTML = `<pre>${escapeHtml(JSON.stringify(d.result, null, 2))}</pre>`;
+      setRunStatus("success","✓ Steam 공지 적용 완료",`${count}/7 언어 적용 완료 · 저장/게시하지 않음`);
+
     }else{
-      setRunStatus("error","✕ 7개 언어 테스트 중단",d.error || "알 수 없는 오류");
-      scanResult.className = "scan-result";
-      scanResult.innerHTML = `<pre>${escapeHtml("7개 언어 미저장 테스트 실패: " + (d.error || "알 수 없는 오류"))}</pre>`;
+      const msg=d.error || "알 수 없는 오류";
+      setRunStatus("error","✕ Steam 공지 적용 중단",msg);
+      alert("Steam 공지 적용 중 오류가 발생했습니다.\n\n" + msg);
     }
   }
 
@@ -1070,9 +1325,9 @@ if(multiTestBtn){
     );
     if(!ok) return;
 
-    setRunStatus("running","7개 언어 적용 중…","KR → EN → JP → CN → TW → TH → RU 순서로 진행 중");
+    setRunStatus("running","Steam 공지 적용 중…","KR → EN → JP → CN → TW → TH → RU 순서로 진행 중");
     scanResult.className = "scan-result empty";
-    scanResult.textContent = "7개 언어를 순서대로 전환하며 미저장 적용 중... Steam 탭은 건드리지 말아주세요.";
+    scanResult.textContent = "Steam 공지를 언어별로 적용 중입니다. 완료될 때까지 잠시 기다려주세요.";
 
     window.postMessage({
       source:"steam-publisher-web",
