@@ -112,3 +112,31 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .run-status.success strong{color:#75e49d}
 .run-status.error{border-color:#c94d4d;background:#321717}
 .run-status.error strong{color:#ff9696}
+
+/* v0.6.4 DOCX formatting recovery */
+.preview hr.docx-separator{
+  border:0;
+  border-top:1px solid rgba(150,160,170,.85);
+  margin:18px 0;
+}
+.preview table.steam-docx-table{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:auto;
+  margin:10px 0 14px;
+}
+.preview table.steam-docx-table th,
+.preview table.steam-docx-table td{
+  border:1px solid #6c737c;
+  padding:6px 8px;
+  vertical-align:middle;
+  text-align:left;
+}
+.preview table.steam-docx-table th{
+  font-weight:700;
+  background:#59606a;
+}
+.preview table.steam-docx-table td{
+  background:#363b43;
+}
+.preview .steam-table-cell-p{margin:0!important}

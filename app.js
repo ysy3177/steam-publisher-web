@@ -448,6 +448,145 @@ function insertRecoveredBlankLines(bodyHtml, langHints, titleText){
   return box.innerHTML;
 }
 
+
+async function extractSeparatorHints(arrayBuffer){
+  try{
+    const zip=await JSZip.loadAsync(arrayBuffer);
+    const raw=await zip.file("word/document.xml").async("string");
+    const xml=new DOMParser().parseFromString(raw,"application/xml");
+    const body=xml.getElementsByTagNameNS("*","body")[0];
+    if(!body) return {};
+
+    const out={};
+    let current=null;
+    const paragraphs=[...body.children].filter(el=>(el.localName||"").toLowerCase()==="p");
+
+    function borderIsVisible(el, side){
+      const pPr=[...el.children].find(x=>(x.localName||"").toLowerCase()==="ppr");
+      if(!pPr) return false;
+      const pBdr=[...pPr.children].find(x=>(x.localName||"").toLowerCase()==="pbdr");
+      if(!pBdr) return false;
+      const border=[...pBdr.children].find(x=>(x.localName||"").toLowerCase()===side);
+      if(!border) return false;
+      const val=border.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main","val")
+        || border.getAttribute("w:val") || border.getAttribute("val") || "";
+      const sz=Number(border.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main","sz")
+        || border.getAttribute("w:sz") || border.getAttribute("sz") || 0);
+      return !/^(nil|none|0)?$/i.test(String(val)) && sz>0;
+    }
+
+    function isShapeOnlySeparator(el){
+      const text=normalizeText(xmlText(el));
+      if(text) return false;
+      const drawings=el.getElementsByTagNameNS("*","drawing");
+      const picts=el.getElementsByTagNameNS("*","pict");
+      if(!drawings.length && !picts.length) return false;
+
+      // Image drawings contain a:blip. A line/shape normally does not.
+      const blips=el.getElementsByTagNameNS("*","blip");
+      if(blips.length) return false;
+
+      const lines=el.getElementsByTagNameNS("*","ln");
+      const shapes=el.getElementsByTagNameNS("*","wsp");
+      return !!(lines.length || shapes.length || picts.length);
+    }
+
+    for(let i=0;i<paragraphs.length;i++){
+      const el=paragraphs[i];
+      const txt=normalizeText(xmlText(el));
+      const upper=txt.toUpperCase();
+      if(SECTION_CODES.includes(upper)){
+        current=upper;
+        if(!out[current]) out[current]=[];
+        continue;
+      }
+      if(!current) continue;
+
+      if(txt){
+        if(borderIsVisible(el,"top")) out[current].push({kind:"before", anchor:txt});
+        if(borderIsVisible(el,"bottom")) out[current].push({kind:"after", anchor:txt});
+      }
+
+      if(isShapeOnlySeparator(el)){
+        let prev="", next="";
+        for(let j=i-1;j>=0;j--){
+          const t=normalizeText(xmlText(paragraphs[j]));
+          if(t && !SECTION_CODES.includes(t.toUpperCase())){ prev=t; break; }
+        }
+        for(let j=i+1;j<paragraphs.length;j++){
+          const t=normalizeText(xmlText(paragraphs[j]));
+          if(t && !SECTION_CODES.includes(t.toUpperCase())){ next=t; break; }
+        }
+        if(prev) out[current].push({kind:"after", anchor:prev, fallbackNext:next});
+        else if(next) out[current].push({kind:"before", anchor:next});
+      }
+    }
+    return out;
+  }catch(err){
+    console.warn("구분선 힌트 추출 실패",err);
+    return {};
+  }
+}
+
+function insertRecoveredSeparators(bodyHtml, hints, titleText){
+  if(!hints || !hints.length) return bodyHtml;
+  const box=document.createElement("div");
+  box.innerHTML=bodyHtml;
+  const titleNorm=normalizeText(titleText);
+
+  function findBlock(anchor){
+    const target=normalizeText(anchor);
+    if(!target || target===titleNorm) return null;
+    const candidates=[...box.querySelectorAll("p,li,div,td,th")];
+    return candidates.find(el=>normalizeText(el.textContent)===target)
+      || candidates.find(el=>normalizeText(el.textContent).includes(target));
+  }
+
+  for(const hint of hints){
+    const block=findBlock(hint.anchor);
+    if(!block) continue;
+
+    const sibling = hint.kind==="before" ? block.previousElementSibling : block.nextElementSibling;
+    if(sibling && sibling.tagName==="HR" && sibling.classList.contains("docx-separator")) continue;
+
+    const hr=document.createElement("hr");
+    hr.className="docx-separator";
+    if(hint.kind==="before") block.parentNode.insertBefore(hr,block);
+    else block.parentNode.insertBefore(hr,block.nextSibling);
+  }
+  return box.innerHTML;
+}
+
+function normalizeTablesForSteam(bodyHtml){
+  const box=document.createElement("div");
+  box.innerHTML=bodyHtml;
+
+  for(const table of [...box.querySelectorAll("table")]){
+    table.classList.add("steam-docx-table");
+
+    // Steam's editor looks cleaner when the first row is a true header row.
+    const firstRow=table.querySelector("tr");
+    if(firstRow){
+      for(const cell of [...firstRow.children]){
+        if(cell.tagName!=="TD") continue;
+        const th=document.createElement("th");
+        for(const attr of [...cell.attributes]) th.setAttribute(attr.name,attr.value);
+        while(cell.firstChild) th.appendChild(cell.firstChild);
+        cell.replaceWith(th);
+      }
+    }
+
+    // Word/Mammoth often wraps each cell in a <p>. Keep the text/formatting,
+    // but remove paragraph margins by marking those wrappers.
+    for(const cell of [...table.querySelectorAll("td,th")]){
+      for(const para of [...cell.children]){
+        if(para.tagName==="P") para.classList.add("steam-table-cell-p");
+      }
+    }
+  }
+  return box.innerHTML;
+}
+
 async function analyze(){
   if(!selectedFile)return;
   analyzeBtn.disabled=true; analyzeBtn.textContent="분석 중...";
@@ -456,6 +595,7 @@ async function analyze(){
     const blankHints=await extractBlankLineHints(arrayBuffer.slice(0));
     const paragraphHints=await extractParagraphHints(arrayBuffer.slice(0));
     const lineBreakHints=await extractManualLineBreakHints(arrayBuffer.slice(0));
+    const separatorHints=await extractSeparatorHints(arrayBuffer.slice(0));
     const result=await mammoth.convertToHtml({arrayBuffer},{
       convertImage:mammoth.images.imgElement(async image=>{
         const buffer=await image.read("base64");
@@ -470,6 +610,8 @@ async function analyze(){
         data.bodyHtml=repairManualLineBreaks(data.bodyHtml, lineBreakHints[code]||[], data.title);
         data.bodyHtml=repairMergedParagraphs(data.bodyHtml, paragraphHints[code]||[], data.title);
         data.bodyHtml=insertRecoveredBlankLines(data.bodyHtml, blankHints[code]||[], data.title);
+        data.bodyHtml=insertRecoveredSeparators(data.bodyHtml, separatorHints[code]||[], data.title);
+        data.bodyHtml=normalizeTablesForSteam(data.bodyHtml);
         parsed[code]=data;
       }
     }
@@ -501,7 +643,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.6.3) =====
+// ===== Steam Chrome extension bridge (v0.6.4) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
