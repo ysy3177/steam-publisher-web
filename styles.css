@@ -102,3 +102,13 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .diag-dot.bad{background:#e45b5b}
 .diag-dot.wait{background:#d6a63a}
 .diagnostic-list span:last-child{font-size:13px;opacity:.9}
+
+/* v0.6.2 run status */
+.run-status{margin-top:12px;padding:13px 15px;border:1px solid var(--line);border-radius:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.run-status strong{font-size:15px}
+.run-status span{color:var(--muted)}
+.run-status.running{border-color:#2d8fd5;background:#102638}
+.run-status.success{border-color:#2ca75e;background:#10291c}
+.run-status.success strong{color:#75e49d}
+.run-status.error{border-color:#c94d4d;background:#321717}
+.run-status.error strong{color:#ff9696}

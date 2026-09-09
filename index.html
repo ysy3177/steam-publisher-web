@@ -15,7 +15,7 @@
         <h1>Steam Publisher Web</h1>
         <p>DOCX 언어 분리 + Steam 편집기 안전 진단 도구</p>
       </div>
-      <span class="version">v0.6.1 · MULTI UNSAVED TEST</span>
+      <span class="version">v0.6.2 · MULTI UNSAVED TEST</span>
     </section>
 
     <section class="panel">
@@ -84,6 +84,10 @@
             <button id="multiTestBtn" disabled>7개 언어 미저장 순환 테스트</button>
           </div>
           <p class="mini">안전 진단/경계 확인은 읽기 전용입니다. <b>한국어 미저장 교체 테스트</b>는 KR만, <b>7개 언어 미저장 순환 테스트</b>는 KR→EN→JP→CN→TW→TH→RU 순서로 언어를 전환하며 화면에만 적용합니다. 저장/게시 버튼은 누르지 않습니다.</p>
+          <div id="runStatus" class="run-status idle">
+            <strong>순환 테스트 상태: 대기</strong>
+            <span>아직 실행하지 않았습니다.</span>
+          </div>
         </div>
       </div>
 
@@ -96,6 +100,6 @@
       <p>진단 결과로 Steam 편집기의 실제 구조를 확인한 뒤, <b>복제 → 전체 언어 선택 → 제목 교체 → 상·하단 배너 사이 본문만 교체 → 저장</b> 자동화를 연결합니다.</p>
     </section>
   </main>
-  <script src="app.js?v=061"></script>
+  <script src="app.js?v=062"></script>
 </body>
 </html>

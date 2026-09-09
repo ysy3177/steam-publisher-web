@@ -157,6 +157,72 @@ function xmlText(el){
   return [...el.getElementsByTagNameNS("*","t")].map(n=>n.textContent||"").join("");
 }
 
+
+async function extractParagraphHints(arrayBuffer){
+  try{
+    const zip=await JSZip.loadAsync(arrayBuffer);
+    const raw=await zip.file("word/document.xml").async("string");
+    const xml=new DOMParser().parseFromString(raw,"application/xml");
+    const body=xml.getElementsByTagNameNS("*","body")[0];
+    if(!body) return {};
+    const out={}; let current=null;
+    for(const el of [...body.children]){
+      if((el.localName||"").toLowerCase()!=="p") continue;
+      const txt=normalizeText(xmlText(el));
+      const upper=txt.toUpperCase();
+      if(SECTION_CODES.includes(upper)){
+        current=upper;
+        if(!out[current]) out[current]=[];
+        continue;
+      }
+      if(!current) continue;
+      const hasDrawing=el.getElementsByTagNameNS("*","drawing").length>0 ||
+                       el.getElementsByTagNameNS("*","pict").length>0;
+      if(txt) out[current].push(txt);
+      else if(!hasDrawing) out[current].push("");
+    }
+    return out;
+  }catch(err){
+    console.warn("문단 힌트 추출 실패",err);
+    return {};
+  }
+}
+
+function repairMergedParagraphs(bodyHtml, paragraphHints, titleText){
+  if(!paragraphHints || !paragraphHints.length) return bodyHtml;
+  const box=document.createElement("div");
+  box.innerHTML=bodyHtml;
+  const titleNorm=normalizeText(titleText);
+  const hints=paragraphHints.filter(t=>normalizeText(t)!==titleNorm && normalizeText(t));
+
+  // Mammoth occasionally places two consecutive Word paragraphs in one HTML
+  // paragraph when list/indent styling changes. Split only when two exact
+  // consecutive source paragraph texts are found joined inside one <p>.
+  for(let i=0;i<hints.length-1;i++){
+    const a=normalizeText(hints[i]), b=normalizeText(hints[i+1]);
+    if(!a || !b) continue;
+    const blocks=[...box.querySelectorAll("p")];
+    for(const block of blocks){
+      const bt=normalizeText(block.textContent);
+      if(bt===a+" "+b || bt===a+b){
+        const raw=block.textContent||"";
+        const pos=raw.indexOf(hints[i+1]);
+        if(pos<=0) continue;
+
+        // Preserve formatting conservatively by cloning the paragraph and
+        // replacing text only when it is plain text. Otherwise leave it alone.
+        if(block.querySelector("img,table")) continue;
+        const p1=block.cloneNode(false), p2=block.cloneNode(false);
+        p1.textContent=hints[i];
+        p2.textContent=hints[i+1];
+        block.replaceWith(p1,p2);
+        break;
+      }
+    }
+  }
+  return box.innerHTML;
+}
+
 async function extractBlankLineHints(arrayBuffer){
   try{
     const zip=await JSZip.loadAsync(arrayBuffer);
@@ -266,6 +332,7 @@ async function analyze(){
   try{
     const arrayBuffer=await selectedFile.arrayBuffer();
     const blankHints=await extractBlankLineHints(arrayBuffer.slice(0));
+    const paragraphHints=await extractParagraphHints(arrayBuffer.slice(0));
     const result=await mammoth.convertToHtml({arrayBuffer},{
       convertImage:mammoth.images.imgElement(async image=>{
         const buffer=await image.read("base64");
@@ -277,6 +344,7 @@ async function analyze(){
     for(const code of SECTION_CODES){
       if(sections[code]){
         const data=extractTitleAndBody(sections[code]);
+        data.bodyHtml=repairMergedParagraphs(data.bodyHtml, paragraphHints[code]||[], data.title);
         data.bodyHtml=insertRecoveredBlankLines(data.bodyHtml, blankHints[code]||[], data.title);
         parsed[code]=data;
       }
@@ -309,7 +377,7 @@ function showDetail(mapping){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
 
-// ===== Steam Chrome extension bridge (v0.6.1) =====
+// ===== Steam Chrome extension bridge (v0.6.2) =====
 
 function refreshKrTestButton(){
   if(krTestBtn){
@@ -324,6 +392,14 @@ const checkExtensionBtn = document.querySelector("#checkExtensionBtn");
 const boundaryBtn = document.querySelector("#boundaryBtn");
 const krTestBtn = document.querySelector("#krTestBtn");
 const multiTestBtn = document.querySelector("#multiTestBtn");
+const runStatus = document.querySelector("#runStatus");
+
+
+function setRunStatus(kind,title,detail){
+  if(!runStatus) return;
+  runStatus.className="run-status "+kind;
+  runStatus.innerHTML=`<strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail||"")}</span>`;
+}
 
 const diag = {
   bridge: [document.querySelector("#bridgeDot"), document.querySelector("#bridgeStatus")],
@@ -393,9 +469,13 @@ window.addEventListener("message", (e)=>{
 
   if(d.type === "MULTI_UNSAVED_TEST_RESULT"){
     if(d.ok){
+      const test=d.result?.test || d.result || {};
+      const count=Array.isArray(test.results)?test.results.length:0;
+      setRunStatus("success","✓ 7개 언어 미저장 테스트 완료",`${count}/7 언어 적용 완료 · 저장/게시하지 않음`);
       scanResult.className = "scan-result";
       scanResult.innerHTML = `<pre>${escapeHtml(JSON.stringify(d.result, null, 2))}</pre>`;
     }else{
+      setRunStatus("error","✕ 7개 언어 테스트 중단",d.error || "알 수 없는 오류");
       scanResult.className = "scan-result";
       scanResult.innerHTML = `<pre>${escapeHtml("7개 언어 미저장 테스트 실패: " + (d.error || "알 수 없는 오류"))}</pre>`;
     }
@@ -569,6 +649,7 @@ if(multiTestBtn){
     );
     if(!ok) return;
 
+    setRunStatus("running","7개 언어 적용 중…","KR → EN → JP → CN → TW → TH → RU 순서로 진행 중");
     scanResult.className = "scan-result empty";
     scanResult.textContent = "7개 언어를 순서대로 전환하며 미저장 적용 중... Steam 탭은 건드리지 말아주세요.";
 
