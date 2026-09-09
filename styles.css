@@ -1,0 +1,48 @@
+
+:root{
+  color-scheme: dark;
+  --bg:#171a21;
+  --panel:#1f2630;
+  --panel2:#252e39;
+  --text:#d6d7d8;
+  --muted:#8f98a0;
+  --line:#3a4755;
+  --accent:#66c0f4;
+  --good:#75b022;
+  --warn:#f2c94c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 20px 60px}
+.hero h1{margin:0 0 8px;font-size:34px;color:white}
+.hero p{margin:0 0 24px;color:var(--muted)}
+.panel{background:var(--panel);border:1px solid #2f3b48;border-radius:10px;padding:20px;margin:16px 0;box-shadow:0 8px 25px rgba(0,0,0,.18)}
+.drop{display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;padding:36px;border:2px dashed #4f6478;border-radius:10px;background:var(--panel2);cursor:pointer}
+.drop:hover,.drop.drag{border-color:var(--accent)}
+.drop input{display:none}
+.drop strong{font-size:20px;color:white}
+.drop span{color:var(--muted)}
+.actions{display:flex;gap:10px;margin-top:16px}
+button{border:0;border-radius:6px;padding:11px 16px;font-weight:700;background:#1a9fff;color:white;cursor:pointer}
+button.secondary{background:#3b4754}
+button:disabled{opacity:.45;cursor:not-allowed}
+.filename{margin-top:12px;color:var(--muted)}
+.lang-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.lang-card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:13px}
+.lang-card strong{display:block;color:white;margin-bottom:5px}
+.lang-card .ok{color:#8ed629}
+.lang-card .missing{color:#d77d7d}
+.hint{color:var(--muted);margin-bottom:0}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tab{background:#344150}
+.tab.active{background:#1a9fff}
+.detail{background:#161b22;border:1px solid var(--line);border-radius:8px;padding:18px;min-height:260px}
+.detail.empty{display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.meta{display:grid;grid-template-columns:110px 1fr;gap:8px 14px;margin-bottom:18px}
+.meta .label{color:var(--muted)}
+.meta .value{color:white;word-break:break-word}
+.preview{background:white;color:#222;border-radius:6px;padding:20px;overflow:auto;max-height:600px}
+.preview img{max-width:100%;height:auto}
+.preview table{border-collapse:collapse;max-width:100%}
+.preview td,.preview th{border:1px solid #777;padding:6px 8px}
+code{background:#10151b;padding:2px 5px;border-radius:4px}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Steam Publisher Web</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Steam Publisher Web</h1>
+      <p>DOCX 공지를 언어별로 분석하는 1차 버전입니다. 파일은 브라우저 안에서만 처리됩니다.</p>
+    </section>
+
+    <section class="panel">
+      <label class="drop" id="dropZone">
+        <input id="fileInput" type="file" accept=".docx" />
+        <strong>DOCX 파일 선택</strong>
+        <span>또는 이 영역에 파일을 끌어다 놓으세요.</span>
+      </label>
+      <div class="actions">
+        <button id="analyzeBtn" disabled>문서 분석</button>
+        <button id="clearBtn" class="secondary">초기화</button>
+      </div>
+      <div id="fileName" class="filename">선택된 파일 없음</div>
+    </section>
+
+    <section class="panel">
+      <h2>언어 상태</h2>
+      <div id="langGrid" class="lang-grid"></div>
+      <p class="hint">러시아어(RU)는 영어(EN) 내용을 사용합니다.</p>
+    </section>
+
+    <section class="panel">
+      <div class="tabs" id="tabs"></div>
+      <div id="detail" class="detail empty">DOCX를 선택한 뒤 분석을 눌러주세요.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Steam 자동화</h2>
+      <p>이 1차 버전에서는 DOCX 분석과 언어 매핑만 확인합니다. 다음 단계에서 Steam 복제/언어 변경/제목·본문 입력 자동화를 연결합니다.</p>
+      <button disabled title="다음 단계에서 연결">Steam 자동 작성 시작 (준비 중)</button>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
