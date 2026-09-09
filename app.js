@@ -81,6 +81,7 @@ function splitByLanguage(container){
   const out = {};
   let current = null;
   let buffer = [];
+
   const flush = () => {
     if(current){
       const box = document.createElement("div");
@@ -98,6 +99,7 @@ function splitByLanguage(container){
       buffer.push(el);
     }
   });
+
   flush();
   return out;
 }
@@ -107,32 +109,33 @@ function extractTitleAndBody(html){
   box.innerHTML = html;
 
   const candidates = [...box.children].filter(el => normalizeText(el.textContent));
-  let titleEl = candidates[0] || null;
-
-  // 업무 문서에 내부 관리용 문장이 제목보다 먼저 들어가는 경우를 대비한 간단한 보정.
-  // "패치 안내 / Notice / ご案内 / 公告 / ประกาศ" 등의 제목형 문장을 우선 탐색.
-  const titlePattern = /(패치\s*안내|notice|ご案内|公告|ประกาศ)/i;
-  const matched = candidates.find(el => titlePattern.test(normalizeText(el.textContent)));
-  if(matched) titleEl = matched;
-
-  const title = titleEl ? normalizeText(titleEl.textContent) : "";
-  if(titleEl) titleEl.remove();
-
-  // 제목 이전의 내부 관리용 텍스트는 본문에서 제외
-  if(matched){
-    let n = box.firstElementChild;
-    while(n && n !== matched){
-      const next = n.nextElementSibling;
-      n.remove();
-      n = next;
-    }
+  if(!candidates.length){
+    return {title:"", bodyHtml:""};
   }
 
-  return { title, bodyHtml: box.innerHTML.trim() };
-}
+  // 제목형 문장을 우선 찾고, 못 찾으면 첫 번째 유효 요소를 제목으로 사용.
+  const titlePattern = /(패치\s*안내|patch\s*notice|ご案内|公告|ประกาศ)/i;
+  const titleEl = candidates.find(el => titlePattern.test(normalizeText(el.textContent))) || candidates[0];
+  const title = normalizeText(titleEl.textContent);
 
-async function fileToArrayBuffer(file){
-  return await file.arrayBuffer();
+  // 핵심 수정:
+  // 제목 DOM을 먼저 삭제하지 않고 위치(index)를 확정한 뒤,
+  // 제목 '다음' 요소부터 전부 새 컨테이너에 복사한다.
+  // 따라서 제목 뒤의 본문/표/이미지가 함께 사라지는 문제가 없다.
+  const allChildren = [...box.children];
+  const titleIndex = allChildren.indexOf(titleEl);
+  const bodyBox = document.createElement("div");
+
+  if(titleIndex >= 0){
+    allChildren.slice(titleIndex + 1).forEach(el => {
+      bodyBox.appendChild(el.cloneNode(true));
+    });
+  }
+
+  return {
+    title,
+    bodyHtml: bodyBox.innerHTML.trim()
+  };
 }
 
 async function analyze(){
@@ -141,7 +144,7 @@ async function analyze(){
   analyzeBtn.textContent = "분석 중...";
 
   try{
-    const arrayBuffer = await fileToArrayBuffer(selectedFile);
+    const arrayBuffer = await selectedFile.arrayBuffer();
     const result = await mammoth.convertToHtml(
       {arrayBuffer},
       {
@@ -198,6 +201,7 @@ function renderTabs(){
     });
     tabs.appendChild(b);
   });
+
   showDetail(available[0]);
 }
 
