@@ -1246,7 +1246,8 @@ window.addEventListener("message", (e)=>{
     if(d.ok){
       const test=d.result?.test || d.result || {};
       const count=Array.isArray(test.results)?test.results.length:0;
-      setRunStatus("success","✓ Steam 공지 적용 완료",`${count}/7 언어 적용 완료 · 저장/게시하지 않음`);
+      const expected=window.__steamPublisherExpectedCount || count;
+      setRunStatus("success","✓ Steam 공지 적용 완료",`${count}/${expected} 선택 언어 적용 완료 · 저장/게시하지 않음`);
 
     }else{
       const msg=d.error || "알 수 없는 오류";
@@ -1421,13 +1422,17 @@ if(multiTestBtn){
       RU:{source:"EN", title:String(parsed.EN?.title||""), bodyHtml:String(parsed.EN?.bodyHtml||"")}
     };
 
-    // 확장 프로그램은 그대로 유지하고, 웹에서 선택된 언어만 전달한다.
-    // 체크 해제한 언어는 payload 자체에 넣지 않으므로 Steam에서 건드리지 않는다.
+    // 모든 언어 키는 유지하되 체크 해제 언어에는 skip 플래그를 보낸다.
+    // 확장 프로그램은 skip=true 언어를 선택/수정하지 않고 그대로 건너뛴다.
     const payloads = {};
-    selectedCodes.forEach(code => { payloads[code] = allPayloads[code]; });
+    APPLY_ORDER.forEach(code => {
+      payloads[code] = selectedLanguages.has(code)
+        ? allPayloads[code]
+        : {skip:true, source:allPayloads[code].source};
+    });
 
     const empty = Object.entries(payloads)
-      .filter(([_,v]) => !v.title.trim() || !v.bodyHtml.trim())
+      .filter(([_,v]) => !v.skip && (!String(v.title||"").trim() || !String(v.bodyHtml||"").trim()))
       .map(([k])=>k);
 
     if(empty.length){
@@ -1436,8 +1441,8 @@ if(multiTestBtn){
     }
 
     const badTitles=Object.entries(payloads)
-      .filter(([_,v])=>v.title.length>80 || /[\r\n]/.test(v.title))
-      .map(([k,v])=>`${k}(${v.title.length}자)`);
+      .filter(([_,v])=>!v.skip && (String(v.title||"").length>80 || /[\r\n]/.test(String(v.title||""))))
+      .map(([k,v])=>`${k}(${String(v.title||"").length}자)`);
 
     if(badTitles.length){
       alert("Steam 제목이 80자를 초과했거나 줄바꿈이 포함되어 중단합니다: " + badTitles.join(", ") + "\n미리보기의 공지 제목이 실제 DOCX 제목과 같은지 확인해주세요.");
@@ -1448,6 +1453,7 @@ if(multiTestBtn){
     if(!ok) return;
 
     const sequenceText = selectedCodes.join(" → ");
+    window.__steamPublisherExpectedCount = selectedCodes.length;
     setRunStatus("running","Steam 공지 적용 중…", sequenceText + " 순서로 진행 중");
     scanResult.className = "scan-result empty";
     scanResult.textContent = "선택한 언어의 Steam 공지를 적용 중입니다. 완료될 때까지 잠시 기다려주세요.";
