@@ -1,0 +1,17 @@
+Steam Publisher - GitHub Pages 최종 이전본
+
+웹 주소:
+https://ysy3177.github.io/steam-publisher-web/
+
+변경:
+- Render 연결 주소를 GitHub Pages 주소로 변경
+- 기존 기능은 그대로 유지
+- 확장 프로그램은 주소 변경 때문에 v0.8.2로 갱신
+- 최종 저장/게시 자동화는 기존과 동일하게 포함하지 않음
+
+적용:
+1. 웹 파일을 GitHub 저장소 main / root에 업로드
+2. Pages 배포 완료 확인
+3. 기존 Steam Publisher 확장 프로그램 제거 또는 비활성화
+4. extension 폴더를 Chrome에서 '압축해제된 확장 프로그램을 로드'로 등록
+5. GitHub Pages와 Steam 편집 탭 새로고침
